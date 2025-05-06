@@ -1,0 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Add any custom global styles *below* the Tailwind directives if needed */
+/* For example:
+body {
+  @apply font-sans antialiased;
+}
+*/

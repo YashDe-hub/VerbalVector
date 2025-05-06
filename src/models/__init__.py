@@ -1,0 +1,1 @@
+"""Model implementation module for VerbalVector.""" 

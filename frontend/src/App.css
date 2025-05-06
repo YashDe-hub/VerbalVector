@@ -1,0 +1,184 @@
+#root {
+  /* max-width: 1280px; */ /* Removed */
+  /* margin: 0 auto; */    /* Removed */
+  /* padding: 2rem; */     /* Removed */
+  /* text-align: center; */ /* Optional: Remove if you don't want default center text */
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Add generic spin animation */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+.card {
+  padding: 2em;
+}
+
+.read-the-docs {
+  color: #888;
+}
+
+/* General Body Styles */
+body {
+  margin: 0;
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  background: linear-gradient(to bottom right, #f8fafc, #e2e8f0); /* slate-50 to slate-100 gradient */
+  color: #334155; /* slate-700 approx */
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column; /* Ensure footer stays at bottom */
+}
+
+/* App container if needed */
+.App {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+}
+
+/* Basic link styling */
+a {
+  color: #4f46e5; /* indigo-600 approx */
+  text-decoration: none;
+  transition: color 0.2s ease-in-out;
+}
+
+a:hover {
+  color: #4338ca; /* indigo-700 approx */
+}
+
+/* Utility for card-like elements */
+.card {
+  background-color: white;
+  border-radius: 0.75rem; /* rounded-xl */
+  border: 1px solid #e2e8f0; /* border-slate-200 */
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px 0 rgba(0, 0, 0, 0.03); /* shadow-sm */
+  padding: 1.5rem; /* p-6 approx */
+}
+
+/* Basic button reset */
+button {
+  font-family: inherit;
+  font-size: 1em;
+  cursor: pointer;
+  border: none;
+  background: none;
+  padding: 0;
+}
+
+/* Style for the main action buttons (Record/Upload) */
+.action-button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem; /* p-8 */
+    background-color: white;
+    border-radius: 0.75rem; /* rounded-xl */
+    border: 1px solid #e2e8f0; /* border-slate-200 */
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px 0 rgba(0, 0, 0, 0.03); /* shadow-sm */
+    transition: all 0.2s ease-in-out;
+}
+
+.action-button:hover {
+    border-color: #a5b4fc; /* hover:border-indigo-300 */
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03); /* hover:shadow-md */
+}
+
+.action-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.action-button > svg {
+    color: #6366f1; /* text-indigo-500 */
+    margin-bottom: 1rem; /* mb-4 */
+    width: 36px;
+    height: 36px;
+}
+
+.action-button > span {
+    color: #475569; /* text-slate-600 */
+    font-weight: 500; /* font-medium */
+}
+
+/* Style for the file input label to behave like a button */
+.file-input-label {
+    /* Inherit styles from action-button */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem; /* p-8 */
+    background-color: white;
+    border-radius: 0.75rem; /* rounded-xl */
+    border: 1px solid #e2e8f0; /* border-slate-200 */
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px 0 rgba(0, 0, 0, 0.03); /* shadow-sm */
+    transition: all 0.2s ease-in-out;
+    cursor: pointer;
+}
+
+.file-input-label:hover {
+    border-color: #a5b4fc; /* hover:border-indigo-300 */
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03); /* hover:shadow-md */
+}
+
+.file-input-label.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.file-input-label > svg {
+    color: #6366f1; /* text-indigo-500 */
+    margin-bottom: 1rem; /* mb-4 */
+    width: 36px;
+    height: 36px;
+}
+
+.file-input-label > span {
+    color: #475569; /* text-slate-600 */
+    font-weight: 500; /* font-medium */
+}
+
+.hidden-input {
+    display: none;
+}
