@@ -132,14 +132,6 @@ VerbalVector/
 -   **Serving**: Hosted locally via Ollama, ensuring privacy and no API costs for inference.
 -   **Interaction**: The Flask backend queries this Ollama endpoint with a detailed prompt containing the transcript and extracted audio/text features.
 
-## Future Work
-
--   **Full RAG Q&A Implementation**: Complete the frontend UI and backend logic for querying the transcript via the vector database.
--   **User Accounts & History**: Allow users to save and track their analysis history.
--   **Enhanced Visualizations**: Add charts or graphs for visualizing trends in detailed metrics.
--   **Refined Scoring & Metrics**: Further tune the normalization and weighting for key scores. Explore additional relevant communication metrics.
--   **Deployment Strategy**: Package the application (e.g., using Docker) for easier deployment and sharing.
-
 ## License
 
 MIT License
