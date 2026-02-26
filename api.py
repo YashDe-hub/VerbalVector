@@ -1,23 +1,23 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
-import json # Added for loading result JSONs
-import logging # Added for logging
+import json
+import logging
 
-# Import the pipeline function
+import config  # loads .env and exposes API keys / paths
 from src.pipelines.analysis_pipeline import run_analysis_pipeline
 
-app = Flask(__name__)
-CORS(app) # Enable CORS for all routes
+# Validate that all required API keys are present before starting
+config.validate()
 
-# Setup logging for Flask app
+app = Flask(__name__)
+CORS(app)
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Define the directory to store uploaded files and generated JSONs
-# These might be superseded by paths used within the pipeline, adjust if needed
-UPLOAD_FOLDER = 'data/uploads'
-ANALYSIS_OUTPUT_FOLDER = 'analysis_output' # Directory used by the pipeline
+UPLOAD_FOLDER = str(config.UPLOAD_DIR)
+ANALYSIS_OUTPUT_FOLDER = str(config.OUTPUT_DIR)
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(ANALYSIS_OUTPUT_FOLDER, exist_ok=True)
 
@@ -75,17 +75,13 @@ def upload_file():
         logger.error(f"Error saving file {filepath}: {e}", exc_info=True)
         return jsonify({'error': 'Could not save uploaded file.'}), 500
 
-    # --- Call the Analysis Pipeline --- 
-    # Define the LLM model to use (Ensure this is available in Ollama)
-    llm_model_name = "verbalvector-llama3-lora:latest" # Or choose another model like gemma2:latest, gemma:2b
-    logger.info(f"Starting analysis pipeline for {filepath} using model {llm_model_name}")
+    # --- Call the Analysis Pipeline ---
+    logger.info(f"Starting analysis pipeline for {filepath}")
 
     try:
-        # The pipeline function expects the output directory where it will save its results
         analysis_results = run_analysis_pipeline(
             audio_path=filepath,
-            model_name=llm_model_name,
-            output_dir=ANALYSIS_OUTPUT_FOLDER
+            output_dir=ANALYSIS_OUTPUT_FOLDER,
         )
 
         if analysis_results is None:
