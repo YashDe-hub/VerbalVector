@@ -1,4 +1,4 @@
-# Python
+# ── Python ───────────────────────────────────────────────────────────────────
 __pycache__/
 *.pyc
 *.pyo
@@ -9,34 +9,41 @@ dist/
 *.egg-info/
 *.egg
 venv/
-.env
 
-# Node.js
+# ── Environment / Secrets ─────────────────────────────────────────────────────
+.env
+# .env.example is intentionally tracked
+
+# ── Node.js ───────────────────────────────────────────────────────────────────
 node_modules/
-frontend/node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# IDE / OS specific
+# ── IDE / OS ──────────────────────────────────────────────────────────────────
 .vscode/
 .idea/
+.cursor/
 *.DS_Store
 
-# Project specific
-data/uploads/*
-data/processed/*
-# analysis_output/* # Keep analysis output for now, or ignore if it's too large/regenerable
-vector_db/* # Ignore vector database files
+# ── Runtime / Generated outputs ───────────────────────────────────────────────
+analysis_output/
+vector_db/
 
-# Sensitive files (if any - ensure these aren't committed)
-# secrets.json
-# *.pem
+# ── Data (audio files and processed outputs are regenerable) ──────────────────
+data/uploads/
+data/raw/
+data/processed/
+data/*.jsonl
 
-# Large files (if you have other large generated files)
-# *.zip
-# *.mp4
-# *.wav
-# *.mp3 
-data/raw/*.wav # Ignore WAV files in data/raw 
-data/raw/*.mp3 # Ignore MP3 files in data/raw 
+# ── Jupyter ───────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+# ── Large binary files ────────────────────────────────────────────────────────
+*.zip
+*.wav
+*.mp3
+*.mp4
+*.m4a
+*.flac
