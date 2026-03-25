@@ -1,8 +1,12 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-import os
+import asyncio
 import json
 import logging
+import os
+
+import uvicorn
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 import config  # loads .env and exposes API keys / paths
 from src.pipelines.analysis_pipeline import run_analysis_pipeline
@@ -10,8 +14,14 @@ from src.pipelines.analysis_pipeline import run_analysis_pipeline
 # Validate that all required API keys are present before starting
 config.validate()
 
-app = Flask(__name__)
-CORS(app)
+app = FastAPI(title="VerbalVector API", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -21,134 +31,114 @@ ANALYSIS_OUTPUT_FOLDER = str(config.OUTPUT_DIR)
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(ANALYSIS_OUTPUT_FOLDER, exist_ok=True)
 
-@app.route('/')
-def home():
-    return "VerbalVector Backend is running!"
 
-# Function to safely read JSON content
-def read_json_file(file_path):
-    try:
-        with open(file_path, 'r') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        logger.error(f"Result JSON not found: {file_path}")
+class QueryRequest(BaseModel):
+    query: str
+
+
+def read_file(file_path: str | None, parser=None):
+    if not file_path:
         return None
-    except json.JSONDecodeError:
-        logger.error(f"Error decoding JSON from: {file_path}")
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+            return parser(content) if parser else content
+    except FileNotFoundError:
+        logger.error(f"File not found: {file_path}")
         return None
     except Exception as e:
-        logger.error(f"Error reading file {file_path}: {e}")
+        logger.error(f"Error reading {file_path}: {e}")
         return None
 
-# Function to safely read plain text content
-def read_text_file(file_path):
+
+@app.get("/")
+async def home():
+    return {"status": "VerbalVector Backend is running!"}
+
+
+@app.post("/api/upload")
+async def upload_file(file: UploadFile = File(...)):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file selected")
+
+    filepath = os.path.join(UPLOAD_FOLDER, file.filename)
+    logger.info(f"Receiving file: {file.filename}")
+
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            return f.read()
-    except FileNotFoundError:
-        logger.error(f"Result text file not found: {file_path}")
-        return None
-    except Exception as e:
-        logger.error(f"Error reading text file {file_path}: {e}")
-        return None
-
-@app.route('/api/upload', methods=['POST'])
-def upload_file():
-    if 'file' not in request.files:
-        logger.warning("Upload attempt with no file part")
-        return jsonify({'error': 'No file part'}), 400
-    file = request.files['file']
-    if file.filename == '':
-        logger.warning("Upload attempt with no selected file")
-        return jsonify({'error': 'No selected file'}), 400
-
-    # Ensure filename is safe (optional but recommended)
-    # filename = secure_filename(file.filename)
-    filename = file.filename # Using original for now
-    filepath = os.path.join(UPLOAD_FOLDER, filename)
-
-    logger.info(f"Receiving file: {filename}")
-    try:
-        file.save(filepath)
+        with open(filepath, "wb") as f:
+            while chunk := await file.read(8192):
+                f.write(chunk)
         logger.info(f"File saved to: {filepath}")
     except Exception as e:
         logger.error(f"Error saving file {filepath}: {e}", exc_info=True)
-        return jsonify({'error': 'Could not save uploaded file.'}), 500
+        raise HTTPException(status_code=500, detail="Could not save uploaded file.")
 
-    # --- Call the Analysis Pipeline ---
     logger.info(f"Starting analysis pipeline for {filepath}")
 
     try:
-        analysis_results = run_analysis_pipeline(
+        # Run the blocking pipeline in a thread pool so the event loop stays free
+        analysis_results = await asyncio.to_thread(
+            run_analysis_pipeline,
             audio_path=filepath,
             output_dir=ANALYSIS_OUTPUT_FOLDER,
         )
 
         if analysis_results is None:
-            logger.error("Analysis pipeline returned None, indicating an error.")
-            return jsonify({'error': 'Analysis failed. Check backend logs for details.'}), 500
+            logger.error("Analysis pipeline returned None.")
+            raise HTTPException(status_code=500, detail="Analysis failed. Check backend logs.")
 
-        logger.info(f"Analysis pipeline completed. Result dictionary: {analysis_results}")
+        logger.info(f"Analysis pipeline completed: {analysis_results}")
 
-        # --- Read the content of the result files --- 
-        transcript_path = analysis_results.get('transcript_path') # Get path first
-        features_path = analysis_results.get('features_path')
-        feedback_path = analysis_results.get('feedback_path')
-        logger.info(f"Attempting to read transcript from: {transcript_path}") # Log paths
-        logger.info(f"Attempting to read features from: {features_path}")
-        logger.info(f"Attempting to read feedback from: {feedback_path}")
+        transcript_path = analysis_results.get("transcript_path")
+        features_path = analysis_results.get("features_path")
+        feedback_path = analysis_results.get("feedback_path")
 
-        transcript_content = read_json_file(transcript_path)
-        features_content = read_json_file(features_path)
-        # Use the new text reader for the feedback file
-        feedback_content = read_text_file(feedback_path)
+        logger.info(f"Reading results: {transcript_path}, {features_path}, {feedback_path}")
 
-        # Check if any file reading failed
-        if transcript_content is None or features_content is None or feedback_content is None:
-             # Be more specific about which file failed
-             failed_files = []
-             if transcript_content is None: failed_files.append(transcript_path)
-             if features_content is None: failed_files.append(features_path)
-             if feedback_content is None: failed_files.append(feedback_path)
-             logger.error(f"Failed to read one or more result files: {failed_files}")
-             return jsonify({'error': f'Analysis completed, but failed to read result files: {failed_files}'}), 500
+        transcript_content = read_file(transcript_path, json.loads)
+        features_content = read_file(features_path, json.loads)
+        feedback_content = read_file(feedback_path)
 
-        logger.info("Successfully read transcript, features JSON, and feedback text content.")
-        # Return the actual content of the analysis
-        return jsonify({
-            'message': f'File {filename} processed successfully.',
-            'transcript': transcript_content,
-            'features': features_content,
-            'feedback': feedback_content
-        }), 200
+        failed = [
+            p for p, c in [
+                (transcript_path, transcript_content),
+                (features_path, features_content),
+                (feedback_path, feedback_content),
+            ]
+            if c is None
+        ]
+        if failed:
+            logger.error(f"Failed to read result files: {failed}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Analysis completed but failed to read result files: {failed}",
+            )
 
+        logger.info("Successfully read all result files.")
+        return {
+            "message": f"File {file.filename} processed successfully.",
+            "transcript": transcript_content,
+            "features": features_content,
+            "feedback": feedback_content,
+        }
+
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"An unexpected error occurred during analysis for {filepath}: {e}", exc_info=True)
-        return jsonify({'error': 'An unexpected error occurred during analysis.'}), 500
-
-# Placeholder for transcript query endpoint
-@app.route('/api/query', methods=['POST'])
-def query_transcript():
-    data = request.get_json()
-    query = data.get('query')
-    # TODO: Add logic to load the relevant transcript/vectorDB
-    # TODO: Perform RAG query using the user's query
-    # TODO: Return the LLM response
-
-    if not query:
-        return jsonify({'error': 'No query provided'}), 400
-
-    # Placeholder response
-    return jsonify({
-        'query': query,
-        'answer': 'This is a placeholder answer from the RAG system.'
-    }), 200
+        logger.error(f"Unexpected error during analysis for {filepath}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An unexpected error occurred during analysis.")
 
 
-if __name__ == '__main__':
-    # Note: host='0.0.0.0' makes the server accessible from your network,
-    # which is useful for testing from your phone or another device.
-    # Remove it if you only want to access it from your local machine.
-    # debug=True enables auto-reloading and provides detailed error pages.
-    # DO NOT use debug=True in a production environment.
-    app.run(host='0.0.0.0', port=5002, debug=True) # Using port 5002 to avoid conflicts 
+@app.post("/api/query")
+async def query_transcript(body: QueryRequest):
+    # TODO: load relevant transcript/vectorDB
+    # TODO: perform RAG query using body.query
+    # TODO: return LLM response
+    return {
+        "query": body.query,
+        "answer": "This is a placeholder answer from the RAG system.",
+    }
+
+
+if __name__ == "__main__":
+    uvicorn.run("api:app", host="0.0.0.0", port=5002, reload=True)
