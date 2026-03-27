@@ -26,8 +26,6 @@ RAW_DATA_DIR = project_root / "data" / "raw"
 # Directory where the analysis output (transcript, features, feedback JSONs) will be saved
 OUTPUT_DIR = project_root / "analysis_output"
 
-# Name of the Ollama model to use for feedback generation
-OLLAMA_MODEL_NAME = "gemma2:9b"
 # --- End Configuration ---
 
 def main(filename: str):
@@ -44,7 +42,6 @@ def main(filename: str):
         # Run the full pipeline for the current audio file
         result_paths = run_analysis_pipeline(
             audio_path=str(audio_path),
-            model_name=OLLAMA_MODEL_NAME,
             output_dir=str(OUTPUT_DIR)
         )
 

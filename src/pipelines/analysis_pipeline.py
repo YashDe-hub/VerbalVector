@@ -10,13 +10,11 @@ Threading:
 import logging
 import json
 import threading
-import time
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-# Feature extraction (unchanged)
+# Feature extraction
 from src.features.audio_features import process_presentation
-from src.features.speech_quality import analyze_speech_quality
 from src.features.text_features import TextFeatureExtractor
 from src.features.feature_combiner import FeatureCombiner
 
@@ -62,8 +60,6 @@ def _perform_analysis(
             combined_features = combiner.combine_features(
                 audio_path=audio_path_str,
                 transcript_text=transcript_text,
-                ollama_client=None,
-                model_name=None,
             )
             if not combined_features:
                 logger.error("[Thread Analysis] FeatureCombiner returned empty dict.")
@@ -155,7 +151,6 @@ def _perform_vector_storage(transcript_text: str, source_id: str, collection) ->
 def run_analysis_pipeline(
     audio_path: str,
     output_dir: str = "analysis_output",
-    model_name: Optional[str] = None,   # kept for backwards compat, no longer used
 ) -> Optional[Dict[str, Any]]:
     """
     Full pipeline: STT → features + emotion (parallel with vector storage) → LLM feedback.
