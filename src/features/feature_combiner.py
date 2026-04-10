@@ -97,7 +97,7 @@ class FeatureCombiner:
         rate_factor = 1.0 - min(1.0, abs(wpm - 150) / 40.0) if wpm > 0 else 0.0
         complex_word_perc = features.get('complex_word_percentage', 0.0)
         complexity_factor = 1.0 - min(1.0, complex_word_perc / 20.0)
-        filler_rate = features.get('filler_rate_percentage', 0.0)
+        filler_rate = features.get('filler_word_rate', 0.0)
         filler_factor = 1.0 - min(1.0, filler_rate / 10.0)
         clarity = (rate_factor * 0.4 + complexity_factor * 0.3 + filler_factor * 0.3)
         derived['speech_clarity'] = float(clarity)

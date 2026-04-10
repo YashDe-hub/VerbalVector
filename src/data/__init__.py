@@ -1,1 +1,1 @@
-"""Data collection and processing module for VerbalVector.""" 
+"""Reserved package — no active modules."""

@@ -5,7 +5,7 @@ Gemini receives the raw audio file alongside the transcript, Librosa
 features, and Hume emotion scores — so it reasons about what it actually
 hears, not just numbers on a page.
 
-Returns a plain markdown string (same shape as the old Ollama output).
+Returns a plain markdown string.
 """
 
 import json
@@ -100,7 +100,7 @@ def _build_prompt(
     features: Dict[str, Any],
     emotion_scores: Optional[Dict[str, float]],
 ) -> str:
-    """Construct the feedback prompt. Same structure as before, extended with emotion scores."""
+    """Build the Gemini prompt from transcript, extracted features, and optional Hume emotion scores."""
 
     features_json = json.dumps(features, indent=2, ensure_ascii=False, default=str)
 

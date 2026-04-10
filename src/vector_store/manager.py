@@ -10,12 +10,14 @@ import chromadb
 from chromadb.utils import embedding_functions # Use newer import style if needed based on ChromaDB version
 from sentence_transformers import SentenceTransformer
 
+import config
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # --- Constants ---
-VECTOR_DB_PATH = "vector_db"  # Directory to store the persistent ChromaDB database
+VECTOR_DB_PATH = str(config.VECTOR_DB_DIR)  # Sourced from config.py (single source of truth)
 COLLECTION_NAME = "transcripts" # Name of the collection within ChromaDB
 # EMBEDDING_MODEL = 'all-MiniLM-L6-v2' # A popular, efficient sentence transformer
 # Alternative: Use ChromaDB's built-in SentenceTransformer embedding function

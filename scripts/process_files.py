@@ -50,7 +50,6 @@ def main(filename: str):
             logger.info(f"  Transcript: {result_paths.get('transcript_path')}")
             logger.info(f"  Features:   {result_paths.get('features_path')}")
             logger.info(f"  Feedback:   {result_paths.get('feedback_path')}")
-            logger.info(f"  Vector DB source_id: {result_paths.get('source_id')}")
         else:
             logger.error(f"Pipeline returned no results for {filename}. It might have failed internally. Check logs.")
 
