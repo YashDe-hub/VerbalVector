@@ -11,7 +11,6 @@ hume>=0.7.0                  # Emotion: Hume Expression Measurement
 # ── Audio processing ──────────────────────────────────────────────────────────
 librosa>=0.9.0
 pydub>=0.25.0
-soundfile>=0.10.0
 ffmpeg-python>=0.2.0         # Requires ffmpeg installed separately
 
 # ── Text processing ───────────────────────────────────────────────────────────
@@ -27,23 +26,20 @@ fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
 python-multipart>=0.0.9
 
-# ── ML / training utilities (used by scripts/ only) ──────────────────────────
-torch>=2.0.0
-transformers>=4.36.0
-datasets>=2.14.0
-peft
-accelerate>=0.21.0
-
-# ── Data collection (scripts/) ────────────────────────────────────────────────
-pytube>=15.0.0
-youtube-transcript-api>=0.6.0
-yt-dlp>=2025.3.31
-
 # ── Dev / notebook ────────────────────────────────────────────────────────────
 ipykernel>=6.0.0
-sounddevice>=0.4.6
 
 # ── Removed ───────────────────────────────────────────────────────────────────
 # ollama          — replaced by Gemini via google-generativeai
 # openai-whisper  — replaced by Deepgram via deepgram-sdk
 # bitsandbytes    — quantization only needed for local model training
+# sounddevice     — only used by main.py live-recording (deleted)
+# soundfile       — only used by main.py live-recording (deleted)
+# torch           — only used by create_finetune_data.py (deleted)
+# transformers    — only used by create_finetune_data.py (deleted)
+# datasets        — only used by create_finetune_data.py (deleted)
+# peft            — only used by create_finetune_data.py (deleted)
+# accelerate      — only used by create_finetune_data.py (deleted)
+# pytube          — only used by data_collector.py (orphaned)
+# youtube-transcript-api — only used by data_collector.py (orphaned)
+# yt-dlp          — only used by data_collector.py (orphaned)

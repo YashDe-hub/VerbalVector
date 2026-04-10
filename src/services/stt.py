@@ -1,8 +1,7 @@
 """
 Speech-to-Text service using Deepgram Nova-3 (batch / pre-recorded).
 
-Returns a result dict with the same shape as the old Whisper output so
-that nothing downstream needs to change:
+Returns a result dict with the following shape:
     {
         "text":     str,   # full transcript
         "language": str,   # detected language code (e.g. "en")
