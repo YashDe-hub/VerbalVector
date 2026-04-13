@@ -106,7 +106,9 @@ export async function getSessions(): Promise<SessionsResponse> {
 
 - [ ] **Step 2: Verify TypeScript compiles**
 
-Run: `cd frontend && npx tsc --noEmit src/api.ts`
+Run: `cd frontend && npx tsc --noEmit`
+
+(Must check the whole project, not just one file — `import.meta.env` types need Vite's type definitions.)
 
 - [ ] **Step 3: Commit**
 
@@ -222,12 +224,13 @@ Active view is highlighted. Supports analysis, query, and history views."
 
 ---
 
-### Task 3: Add session label input to upload flow
+### Task 3: Add session label input, migrate to API client, use NavHeader
 
 **Files:**
 - Modify: `frontend/src/components/VerbalVector.tsx`
+- Modify: `frontend/src/components/ResultsDisplay.tsx`
 
-Add an optional text input where users can name their session before uploading or recording. Pass it through the upload API call.
+Add an optional text input where users can name their session before uploading or recording. Also migrate the hardcoded `axios.post('http://localhost:5002/api/upload', ...)` to the centralized `uploadAudio()` from `api.ts`, and replace the duplicated header with NavHeader.
 
 - [ ] **Step 1: Add session label state and input**
 
@@ -257,22 +260,46 @@ In the `stage === 'input'` section, add a text input above the Record/Upload but
 />
 ```
 
-- [ ] **Step 2: Update API call to include session_label**
+- [ ] **Step 2: Migrate upload call to centralized API client**
 
-In the `processFile` function (inside the `useEffect` for processing), update the FormData:
+Replace the direct `axios.post` call in the `processFile` function with the centralized `uploadAudio()`:
 
+Add import:
 ```typescript
-const formData = new FormData();
-formData.append('file', audioFile);
-if (sessionLabel) formData.append('session_label', sessionLabel);
+import { uploadAudio } from '../api';
 ```
 
-- [ ] **Step 3: Remove duplicated header from VerbalVector.tsx**
-
-Replace the inline `<header>` JSX with the shared `NavHeader` component. Add import:
+Replace the `try` block inside `processFile` (the `axios.post` call and response handling) with:
 
 ```typescript
+try {
+    const rawResult = await uploadAudio(audioFile, sessionLabel);
+    onAnalysisComplete(rawResult);
+} catch (err: any) {
+    // ... existing error handling stays the same, but use err.response?.data?.error pattern
+}
+```
+
+Remove the direct `axios` import if no longer used elsewhere in the file. The `axios` import and `import axios from 'axios'` line can be removed since `uploadAudio` handles the HTTP call.
+
+**Important:** Preserve the `AnalysisResult` export — `App.tsx` and `ResultsDisplay.tsx` import it from this file.
+
+- [ ] **Step 3: Replace duplicated header with NavHeader in VerbalVector.tsx**
+
+Add import:
+```typescript
 import NavHeader from './NavHeader';
+```
+
+Update `VerbalVectorProps` to add `onNavigate`, and update the destructured props in the component function:
+
+```typescript
+interface VerbalVectorProps {
+  onAnalysisComplete: (result: AnalysisResult) => void;
+  onNavigate: (view: "analysis" | "query" | "history") => void;
+}
+
+const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete, onNavigate }) => {
 ```
 
 Replace the `<header style={headerStyle}>...</header>` block with:
@@ -281,20 +308,11 @@ Replace the `<header style={headerStyle}>...</header>` block with:
 <NavHeader activeView="analysis" onNavigate={onNavigate} />
 ```
 
-Add `onNavigate` to `VerbalVectorProps`:
-
-```typescript
-interface VerbalVectorProps {
-  onAnalysisComplete: (result: AnalysisResult) => void;
-  onNavigate: (view: "analysis" | "query" | "history") => void;
-}
-```
-
 Remove all the header-related style constants (`headerStyle`, `logoContainerStyle`, `logoCircleStyle`, `logoTextStyle`, `titleStyle`, `titleSpanStyle`, `navStyle`, `navLinkStyle`, `navLinkHoverStyle`).
 
-- [ ] **Step 4: Remove duplicated header from ResultsDisplay.tsx**
+- [ ] **Step 4: Replace duplicated header in ResultsDisplay.tsx**
 
-Same treatment — import `NavHeader`, replace inline header, add `onNavigate` prop.
+Same treatment — import `NavHeader`, update `ResultsDisplayProps` to add `onNavigate`, update destructured props, replace inline header, remove header style constants.
 
 - [ ] **Step 5: Verify it builds**
 
@@ -304,11 +322,11 @@ Run: `cd frontend && npm run build`
 
 ```bash
 git add frontend/src/components/VerbalVector.tsx frontend/src/components/ResultsDisplay.tsx
-git commit -m "feat(frontend): add session label input and use shared NavHeader
+git commit -m "feat(frontend): add session label, migrate to API client, use NavHeader
 
-Users can name sessions before uploading. session_label is sent as a form
-field alongside the audio file. Both VerbalVector and ResultsDisplay now
-use the shared NavHeader component."
+- Session label input lets users name sessions before uploading
+- Upload call migrated from hardcoded axios to centralized api.ts client
+- Both VerbalVector and ResultsDisplay now use shared NavHeader"
 ```
 
 ---
@@ -536,8 +554,8 @@ A list view showing all stored sessions with metadata (label, timestamp, chunk c
 Create `frontend/src/components/SessionHistory.tsx`:
 
 ```typescript
-import React, { useState, useEffect } from "react";
-import { Clock, FileText, Loader2, AlertCircle, Database } from "lucide-react";
+import React, { useState, useEffect, useCallback } from "react";
+import { Clock, FileText, Loader2, AlertCircle, Database, RefreshCw } from "lucide-react";
 import { getSessions, type Session } from "../api";
 import NavHeader from "./NavHeader";
 
@@ -551,13 +569,16 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ onNavigate, onQuerySess
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const fetchSessions = useCallback(() => {
     setLoading(true);
+    setError(null);
     getSessions()
       .then((res) => setSessions(res.sessions))
       .catch((err) => setError(err.response?.data?.detail || "Failed to load sessions."))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { fetchSessions(); }, [fetchSessions]);
 
   const formatDate = (timestamp: number) => {
     return new Date(timestamp * 1000).toLocaleDateString("en-US", {
@@ -577,9 +598,29 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ onNavigate, onQuerySess
         <h2 style={{ fontSize: "1.875rem", fontWeight: 300, marginBottom: "0.5rem", textAlign: "center" }}>
           Session History
         </h2>
-        <p style={{ color: "#64748b", fontSize: "0.875rem", textAlign: "center", marginBottom: "2rem" }}>
+        <p style={{ color: "#64748b", fontSize: "0.875rem", textAlign: "center", marginBottom: "1rem" }}>
           Browse your past recordings. Click a session to ask questions about it.
         </p>
+        <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
+          <button
+            onClick={fetchSessions}
+            disabled={loading}
+            style={{
+              background: "none",
+              border: "1px solid #e2e8f0",
+              borderRadius: "0.375rem",
+              padding: "0.375rem 0.75rem",
+              fontSize: "0.8rem",
+              color: "#64748b",
+              cursor: loading ? "not-allowed" : "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.375rem",
+            }}
+          >
+            <RefreshCw size={12} /> Refresh
+          </button>
+        </div>
 
         {loading && (
           <div style={{ textAlign: "center", padding: "3rem" }}>

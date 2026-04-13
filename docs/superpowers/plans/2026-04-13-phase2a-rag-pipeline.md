@@ -61,7 +61,7 @@ if __name__ == "__main__":
     uvicorn.run("api:app", host=config.API_HOST, port=config.API_PORT, reload=config.API_RELOAD)
 ```
 
-Remove the `import os` from api.py since it's still used by `os.path.splitext`, `os.path.basename`, `os.path.join` — keep it.
+Keep the `import os` in api.py — it's still used by `os.path.splitext`, `os.path.basename`, and `os.path.join`.
 
 - [ ] **Step 3: Remove logging.basicConfig() from manager.py**
 
@@ -118,11 +118,17 @@ def _make_mock_collection():
 
 
 def test_search_transcripts_with_source_filter():
-    """search_transcripts with source_id should pass a where filter."""
+    """search_transcripts with source_id should pass a where filter and return dicts."""
     from src.vector_store.manager import search_transcripts
 
     collection = _make_mock_collection()
-    collection.query.return_value = {"documents": [["chunk1", "chunk2"]]}
+    collection.query.return_value = {
+        "documents": [["chunk1", "chunk2"]],
+        "metadatas": [[
+            {"source": "abc123", "session_label": "Talk 1"},
+            {"source": "abc123", "session_label": "Talk 1"},
+        ]],
+    }
 
     results = search_transcripts(
         query="test query",
@@ -133,7 +139,10 @@ def test_search_transcripts_with_source_filter():
 
     call_kwargs = collection.query.call_args[1]
     assert call_kwargs["where"] == {"source": "abc123"}
-    assert results == ["chunk1", "chunk2"]
+    assert len(results) == 2
+    assert results[0]["text"] == "chunk1"
+    assert results[0]["source_id"] == "abc123"
+    assert results[0]["session_label"] == "Talk 1"
 
 
 def test_search_transcripts_without_source_filter():
@@ -141,7 +150,10 @@ def test_search_transcripts_without_source_filter():
     from src.vector_store.manager import search_transcripts
 
     collection = _make_mock_collection()
-    collection.query.return_value = {"documents": [["chunk1"]]}
+    collection.query.return_value = {
+        "documents": [["chunk1"]],
+        "metadatas": [[{"source": "src1", "session_label": "My Talk"}]],
+    }
 
     results = search_transcripts(
         query="test query",
@@ -151,7 +163,8 @@ def test_search_transcripts_without_source_filter():
 
     call_kwargs = collection.query.call_args[1]
     assert "where" not in call_kwargs
-    assert results == ["chunk1"]
+    assert results[0]["text"] == "chunk1"
+    assert results[0]["source_id"] == "src1"
 
 
 def test_store_transcript_includes_session_label():
@@ -201,26 +214,41 @@ Run: `PYTHONPATH=. pytest tests/test_manager.py -v`
 
 Expected: FAIL — `search_transcripts` doesn't accept `source_id`, `store_transcript` doesn't accept `session_label`, `list_sessions` doesn't exist.
 
-- [ ] **Step 3: Add source_id filter to search_transcripts**
+- [ ] **Step 3: Add source_id filter to search_transcripts and return metadata**
 
-In `src/vector_store/manager.py`, update the `search_transcripts` function signature and body:
+In `src/vector_store/manager.py`, update the `search_transcripts` function signature and return type. The function must return documents **with their metadata** so the API can build accurate source citations:
 
 ```python
-def search_transcripts(query: str, collection, n_results: int = 5, source_id: str | None = None) -> list[str]:
+def search_transcripts(query: str, collection, n_results: int = 5, source_id: str | None = None) -> list[dict]:
+    """
+    Returns a list of dicts: {"text": str, "source_id": str, "session_label": str}
+    """
 ```
 
-In the `collection.query()` call, conditionally add a `where` filter:
+In the `collection.query()` call, include both documents and metadatas, and conditionally add a `where` filter:
 
 ```python
         query_kwargs = {
             "query_texts": [query],
             "n_results": n_results,
-            "include": ["documents"],
+            "include": ["documents", "metadatas"],
         }
         if source_id:
             query_kwargs["where"] = {"source": source_id}
 
         results = collection.query(**query_kwargs)
+
+        docs = results.get("documents", [[]])[0]
+        metas = results.get("metadatas", [[]])[0]
+
+        return [
+            {
+                "text": doc,
+                "source_id": meta.get("source", ""),
+                "session_label": meta.get("session_label", ""),
+            }
+            for doc, meta in zip(docs, metas)
+        ]
 ```
 
 - [ ] **Step 4: Add session_label to store_transcript**
@@ -307,7 +335,9 @@ A new function that takes a user query + retrieved context chunks and returns a 
 
 - [ ] **Step 1: Write failing test**
 
-Create `tests/test_rag.py`:
+Create `tests/test_rag.py`.
+
+**Important:** `generate_rag_answer` uses a lazy import (`from google import genai` inside the function body). Patching `src.services.llm.genai` won't work because the name doesn't exist at the module level. Instead, patch `google.genai.Client` to intercept the client creation.
 
 ```python
 """Tests for RAG answer generation."""
@@ -316,16 +346,15 @@ from unittest.mock import patch, MagicMock
 
 def test_generate_rag_answer_returns_answer():
     """generate_rag_answer should return text from Gemini."""
+    from src.services.llm import generate_rag_answer
+
     mock_response = MagicMock()
     mock_response.text = "Based on your presentation, the timeline was discussed in Q3."
 
-    mock_client = MagicMock()
-    mock_client.models.generate_content.return_value = mock_response
+    mock_client_instance = MagicMock()
+    mock_client_instance.models.generate_content.return_value = mock_response
 
-    with patch("src.services.llm.genai") as mock_genai_module:
-        mock_genai_module.Client.return_value = mock_client
-        from src.services.llm import generate_rag_answer
-
+    with patch("google.genai.Client", return_value=mock_client_instance):
         result = generate_rag_answer(
             query="What about the timeline?",
             context_chunks=[
@@ -335,11 +364,15 @@ def test_generate_rag_answer_returns_answer():
 
     assert result is not None
     assert "answer" in result
-    assert "timeline" in result["answer"].lower()
+    assert result["answer"] == mock_response.text
+
+    # Verify Gemini was called with low temperature
+    call_kwargs = mock_client_instance.models.generate_content.call_args
+    assert call_kwargs[1]["config"].temperature == 0.3
 
 
 def test_generate_rag_answer_no_context():
-    """generate_rag_answer with empty context should return a no-content message."""
+    """generate_rag_answer with empty context should return a no-content message without calling Gemini."""
     from src.services.llm import generate_rag_answer
 
     result = generate_rag_answer(
@@ -349,6 +382,19 @@ def test_generate_rag_answer_no_context():
 
     assert result is not None
     assert "no relevant" in result["answer"].lower()
+
+
+def test_generate_rag_answer_gemini_error():
+    """generate_rag_answer should return None if Gemini raises."""
+    from src.services.llm import generate_rag_answer
+
+    with patch("google.genai.Client", side_effect=Exception("API error")):
+        result = generate_rag_answer(
+            query="test?",
+            context_chunks=[{"text": "some text", "source_id": "x", "session_label": "y"}],
+        )
+
+    assert result is None
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -359,7 +405,7 @@ Expected: FAIL — `generate_rag_answer` doesn't exist.
 
 - [ ] **Step 3: Implement generate_rag_answer**
 
-Add to `src/services/llm.py`:
+Add to `src/services/llm.py`. **Important:** Follow the same lazy-import pattern as `generate_feedback` for `google.genai`, but use `config` for API keys (no `os.environ` fallback — CLAUDE.md requires config centralization):
 
 ```python
 def generate_rag_answer(
@@ -386,12 +432,7 @@ def generate_rag_answer(
         logger.error("google-genai is not installed.")
         return None
 
-    try:
-        from config import GEMINI_API_KEY, GEMINI_LLM_MODEL
-    except ImportError:
-        import os
-        GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-        GEMINI_LLM_MODEL = os.environ.get("GEMINI_LLM_MODEL", "gemini-2.5-flash")
+    from config import GEMINI_API_KEY, GEMINI_LLM_MODEL
 
     if not GEMINI_API_KEY:
         logger.error("GEMINI_API_KEY is not set.")
@@ -439,7 +480,7 @@ When citing information, mention which session it came from.
 
 Run: `PYTHONPATH=. pytest tests/test_rag.py -v`
 
-Expected: 2 PASS
+Expected: 3 PASS
 
 - [ ] **Step 5: Commit**
 
@@ -537,23 +578,27 @@ from unittest.mock import patch, MagicMock
 
 
 @pytest.fixture
-def client():
-    """Create a test client with mocked config validation."""
+async def client():
+    """Create an async test client with mocked config validation."""
     with patch("config.validate"):
         from api import app
         from httpx import AsyncClient, ASGITransport
         transport = ASGITransport(app=app)
-        return AsyncClient(transport=transport, base_url="http://test")
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            yield ac
 
 
 @pytest.mark.asyncio
 async def test_query_returns_answer(client):
     """POST /api/query should return an answer from RAG."""
     mock_collection = MagicMock()
+    mock_chunks = [
+        {"text": "chunk about timelines", "source_id": "talk1", "session_label": "Monday standup"},
+    ]
 
     with (
         patch("api.initialize_vector_store", return_value=mock_collection),
-        patch("api.search_transcripts", return_value=["chunk about timelines"]),
+        patch("api.search_transcripts", return_value=mock_chunks),
         patch("api.generate_rag_answer", return_value={"answer": "The timeline is Q3."}),
     ):
         response = await client.post("/api/query", json={"query": "timeline?"})
@@ -561,16 +606,19 @@ async def test_query_returns_answer(client):
     assert response.status_code == 200
     data = response.json()
     assert data["answer"] == "The timeline is Q3."
+    assert len(data["sources"]) == 1
+    assert data["sources"][0]["source_id"] == "talk1"
 
 
 @pytest.mark.asyncio
 async def test_query_with_source_id(client):
     """POST /api/query with source_id should pass it to search."""
     mock_collection = MagicMock()
+    mock_chunks = [{"text": "scoped chunk", "source_id": "abc123", "session_label": "Talk"}]
 
     with (
         patch("api.initialize_vector_store", return_value=mock_collection),
-        patch("api.search_transcripts", return_value=["scoped chunk"]) as mock_search,
+        patch("api.search_transcripts", return_value=mock_chunks) as mock_search,
         patch("api.generate_rag_answer", return_value={"answer": "Scoped answer."}),
     ):
         response = await client.post(
@@ -582,6 +630,23 @@ async def test_query_with_source_id(client):
     call_kwargs = mock_search.call_args[1]
     assert call_kwargs["source_id"] == "abc123"
     assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_query_no_results(client):
+    """POST /api/query with no matching chunks should return no-content message."""
+    mock_collection = MagicMock()
+
+    with (
+        patch("api.initialize_vector_store", return_value=mock_collection),
+        patch("api.search_transcripts", return_value=[]),
+    ):
+        response = await client.post("/api/query", json={"query": "something obscure"})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "no relevant" in data["answer"].lower()
+    assert data["sources"] == []
 
 
 @pytest.mark.asyncio
@@ -653,16 +718,15 @@ async def query_transcript(body: QueryRequest):
             "sources": [],
         }
 
-    context_chunks = [{"text": c, "source_id": body.source_id or "all", "session_label": ""} for c in chunks]
-
-    result = await asyncio.to_thread(generate_rag_answer, body.query, context_chunks)
+    # chunks is now list[dict] with text, source_id, session_label per chunk
+    result = await asyncio.to_thread(generate_rag_answer, body.query, chunks)
     if not result:
         raise HTTPException(status_code=500, detail="Failed to generate answer.")
 
     return {
         "query": body.query,
         "answer": result["answer"],
-        "sources": context_chunks,
+        "sources": chunks,
     }
 ```
 
@@ -718,7 +782,7 @@ Then update the `run_analysis_pipeline` call (around line 96) to pass the metada
 
 Run: `PYTHONPATH=. pytest tests/test_api_query.py -v`
 
-Expected: 3 PASS
+Expected: 4 PASS
 
 - [ ] **Step 8: Run all tests**
 

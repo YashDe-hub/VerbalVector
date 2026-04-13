@@ -197,14 +197,14 @@ def test_streaming_transcriber_import():
     assert StreamingTranscriber is not None
 
 
-def test_streaming_transcriber_not_implemented():
+@pytest.mark.asyncio
+async def test_streaming_transcriber_not_implemented():
     """Start should raise NotImplementedError until fully implemented."""
     from src.services.streaming_stt import StreamingTranscriber
 
     transcriber = StreamingTranscriber(on_transcript=lambda text, final: None)
     with pytest.raises(NotImplementedError):
-        import asyncio
-        asyncio.run(transcriber.start())
+        await transcriber.start()
 ```
 
 - [ ] **Step 4: Commit**
