@@ -29,11 +29,9 @@ logger = logging.getLogger(__name__)
 
 UPLOAD_FOLDER = str(config.UPLOAD_DIR)
 ANALYSIS_OUTPUT_FOLDER = str(config.OUTPUT_DIR)
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(ANALYSIS_OUTPUT_FOLDER, exist_ok=True)
 
 ALLOWED_EXTENSIONS = {".mp3", ".wav", ".m4a", ".flac", ".ogg", ".webm"}
-MAX_FILE_SIZE_BYTES = 200 * 1024 * 1024  # 200 MB
+MAX_FILE_SIZE_BYTES = config.MAX_FILE_SIZE_BYTES
 
 
 class QueryRequest(BaseModel):
