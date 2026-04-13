@@ -7,8 +7,7 @@ import logging
 import time
 import nltk
 import chromadb
-from chromadb.utils import embedding_functions # Use newer import style if needed based on ChromaDB version
-from sentence_transformers import SentenceTransformer
+from chromadb.utils import embedding_functions
 
 import config
 
@@ -17,13 +16,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 # --- Constants ---
-VECTOR_DB_PATH = str(config.VECTOR_DB_DIR)  # Sourced from config.py (single source of truth)
-COLLECTION_NAME = "transcripts" # Name of the collection within ChromaDB
-# EMBEDDING_MODEL = 'all-MiniLM-L6-v2' # A popular, efficient sentence transformer
-# Alternative: Use ChromaDB's built-in SentenceTransformer embedding function
-# This might simplify setup if sentence-transformers library has issues
-# If using this, you might not need the explicit SentenceTransformer import/init later
-DEFAULT_EF = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
+VECTOR_DB_PATH = str(config.VECTOR_DB_DIR)
+COLLECTION_NAME = "transcripts"
+_EMBEDDING_MODEL_NAME = config.EMBEDDING_MODEL
+DEFAULT_EF = embedding_functions.SentenceTransformerEmbeddingFunction(model_name=_EMBEDDING_MODEL_NAME)
 
 # --- Initialization ---
 _chroma_client = None
@@ -47,7 +43,7 @@ def get_embedding_function():
     # Using ChromaDB's built-in wrapper for simplicity
     global _embedding_function
     if _embedding_function is None:
-        logger.info(f"Using ChromaDB SentenceTransformer embedding function ({DEFAULT_EF.model_name}).")
+        logger.info(f"Using ChromaDB SentenceTransformer embedding function ({_EMBEDDING_MODEL_NAME}).")
         _embedding_function = DEFAULT_EF
         # Add error handling if needed
     return _embedding_function

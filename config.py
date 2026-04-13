@@ -21,6 +21,8 @@ HUME_API_KEY: str = os.environ.get("HUME_API_KEY", "")
 # ── Model Identifiers ────────────────────────────────────────────────────────
 DEEPGRAM_STT_MODEL: str = os.environ.get("DEEPGRAM_STT_MODEL", "nova-3")
 GEMINI_LLM_MODEL: str = os.environ.get("GEMINI_LLM_MODEL", "gemini-2.5-flash")
+EMBEDDING_MODEL: str = os.environ.get("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+MAX_FILE_SIZE_BYTES: int = int(os.environ.get("MAX_FILE_SIZE_BYTES", 50 * 1024 * 1024))
 
 # ── Directory Paths ──────────────────────────────────────────────────────────
 ROOT_DIR = Path(__file__).parent
@@ -31,6 +33,7 @@ VECTOR_DB_DIR = ROOT_DIR / "vector_db"
 # Ensure runtime directories exist
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+VECTOR_DB_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def validate():
