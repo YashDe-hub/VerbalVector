@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import axios from 'axios'; // Import axios
-import { Mic, Upload, Pause, CheckCircle, AlertCircle, Info, Loader2 } from 'lucide-react'; // Removed unused Play, added Loader2
+import { Mic, Upload, Pause, AlertCircle, Loader2 } from 'lucide-react';
 import '../App.css'; // Import the CSS file
+import { uploadAudio } from '../api';
+import NavHeader from './NavHeader';
 
 // Define expected type for analysis results (adjust as needed based on actual API)
 export interface AnalysisResult {
@@ -35,73 +36,8 @@ export interface AnalysisResult {
 // Define props for VerbalVector
 interface VerbalVectorProps {
   onAnalysisComplete: (result: AnalysisResult) => void;
+  onNavigate: (view: "analysis" | "query" | "history") => void;
 }
-
-const headerStyle: React.CSSProperties = {
-    padding: '1.5rem 2rem',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottom: '1px solid #e2e8f0',
-    position: 'sticky',
-    top: 0,
-    backgroundColor: 'white',
-    zIndex: 10,
-    width: '100%',
-    boxSizing: 'border-box',
-};
-
-const logoContainerStyle: React.CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem', // space-x-2
-};
-
-const logoCircleStyle: React.CSSProperties = {
-    width: '2rem', // w-8
-    height: '2rem', // h-8
-    borderRadius: '9999px', // rounded-full
-    backgroundColor: '#6366f1', // bg-indigo-500
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    boxShadow: 'inset 0 1px 2px 0 rgba(0,0,0,0.05)', // shadow-inner approx
-};
-
-const logoTextStyle: React.CSSProperties = {
-    color: '#fff', // text-white
-    fontWeight: 600, // font-semibold
-    fontSize: '1.125rem', // text-lg
-};
-
-const titleStyle: React.CSSProperties = {
-    fontSize: '1.5rem', // text-2xl
-    fontWeight: 300, // font-light
-    letterSpacing: '0.025em', // tracking-wide
-    color: '#334155', // Default text color from body
-};
-
-const titleSpanStyle: React.CSSProperties = {
-    fontWeight: 500, // font-medium
-};
-
-const navStyle: React.CSSProperties = {
-    display: 'flex',
-    gap: '1.5rem',
-    fontSize: '0.875rem',
-    fontWeight: 500,
-    color: '#475569', // text-slate-600 (visible on white)
-};
-
-const navLinkStyle: React.CSSProperties = {
-     color: '#475569', // text-slate-600
-     textDecoration: 'none',
-     transition: 'color 0.2s ease-in-out',
-};
-
-const navLinkHoverStyle: React.CSSProperties = {
-     color: '#6366f1', // hover:text-indigo-500
-};
 
 const mainStyle: React.CSSProperties = {
     flexGrow: 1,
@@ -125,10 +61,11 @@ const footerStyle: React.CSSProperties = {
     marginTop: '3rem', // mt-12
 };
 
-const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete }) => {
+const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete, onNavigate }) => {
   const [stage, setStage] = useState<'input' | 'recording' | 'processing'>('input');
   const [isRecording, setIsRecording] = useState(false);
   const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [sessionLabel, setSessionLabel] = useState('');
   // Removed progress state
   const [waveformData, setWaveformData] = useState<number[]>([]);
   const [isLoadingApi, setIsLoadingApi] = useState(false); // Loading state for API call
@@ -160,62 +97,26 @@ const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete }) => {
         setApiError(null);
         console.log(`[API Call] Starting upload for: ${audioFile.name}`);
 
-        const formData = new FormData();
-        formData.append('file', audioFile);
-
         try {
-          const response = await axios.post<AnalysisResult>('http://localhost:5002/api/upload', formData, {
-            headers: {
-              'Content-Type': 'multipart/form-data',
-            },
-            onUploadProgress: (progressEvent) => {
-              if (progressEvent.total) {
-                // Handle progress if needed
-              }
-            },
-            // Add a timeout? e.g., timeout: 180000 // 3 minutes
-          });
-
-          console.log('[API Call] Success, response data:', response.data);
-
-          // Pass the raw response data; defaults/calculations happen in ResultsDisplay
-          const rawResult: AnalysisResult = response.data;
-
-          // We might still want a default for overallScore if API doesn't provide it AND
-          // we decide to display the API's overall score alongside the calculated one.
-          // For now, let's assume ResultsDisplay calculates it.
-          // const resultWithDefaults: AnalysisResult = {
-          //   ...rawResult,
-          //   overallScore: rawResult.overallScore ?? 0, // Default API overall to 0 if missing
-          // };
-
-          onAnalysisComplete(rawResult); // Pass raw result up to App
-          // App.tsx will change the stage to 'results'
-
+          const rawResult = await uploadAudio(audioFile, sessionLabel);
+          console.log('[API Call] Success, response data:', rawResult);
+          onAnalysisComplete(rawResult as unknown as AnalysisResult);
         } catch (err: any) {
           console.error("[API Call] Error caught:", err);
           let errorMessage = 'An unknown error occurred during analysis.';
-          if (axios.isAxiosError(err)) {
-            if (err.response) {
-              // The request was made and the server responded with a status code
-              // that falls out of the range of 2xx
-              console.error("[API Call] Error response data:", err.response.data);
-              console.error("[API Call] Error response status:", err.response.status);
-              errorMessage = err.response.data?.error || `Server error: ${err.response.status}`;
-            } else if (err.request) {
-              // The request was made but no response was received
-              console.error("[API Call] No response received:", err.request);
-              errorMessage = 'Could not connect to the analysis server. Is it running?';
-            } else {
-              // Something happened in setting up the request that triggered an Error
-              console.error('[API Call] Error setting up request:', err.message);
-              errorMessage = `Request setup error: ${err.message}`;
-            }
+          if (err.response) {
+            console.error("[API Call] Error response data:", err.response.data);
+            console.error("[API Call] Error response status:", err.response.status);
+            errorMessage = err.response.data?.error || `Server error: ${err.response.status}`;
+          } else if (err.request) {
+            console.error("[API Call] No response received:", err.request);
+            errorMessage = 'Could not connect to the analysis server. Is it running?';
           } else {
-             errorMessage = `Error: ${err.message}`;
+            console.error('[API Call] Error setting up request:', err.message);
+            errorMessage = `Request setup error: ${err.message}`;
           }
           setApiError(errorMessage);
-          setStage('input'); // Go back to input stage on error
+          setStage('input');
         } finally {
           console.log('[API Call] Finally block.');
           setIsLoadingApi(false);
@@ -232,7 +133,7 @@ const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete }) => {
         setStage('input'); // Go back for now
     }
 
-  }, [stage, audioFile, onAnalysisComplete]);
+  }, [stage, audioFile, onAnalysisComplete, sessionLabel]);
 
   // Cleanup media stream on component unmount
   useEffect(() => {
@@ -352,44 +253,7 @@ const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete }) => {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', width: '100%' }}>
       {/* Header */}
-      <header style={headerStyle}>
-        {/* Logo and Title (Left) */}
-        <div style={logoContainerStyle}>
-          <div style={logoCircleStyle}>
-            <span style={logoTextStyle}>V</span>
-          </div>
-          <h1 style={titleStyle}>
-            <span style={titleSpanStyle}>Verbal</span> Vector
-          </h1>
-        </div>
-        {/* Navigation Links (Right) */}
-        <nav style={navStyle}>
-          <a 
-            href="#"
-            style={navLinkStyle}
-            onMouseOver={(e) => e.currentTarget.style.color = navLinkHoverStyle.color || ''}
-            onMouseOut={(e) => e.currentTarget.style.color = navLinkStyle.color || ''}
-          >
-            Dashboard
-          </a>
-          <a 
-            href="#"
-            style={navLinkStyle}
-            onMouseOver={(e) => e.currentTarget.style.color = navLinkHoverStyle.color || ''}
-            onMouseOut={(e) => e.currentTarget.style.color = navLinkStyle.color || ''}
-           >
-            History
-          </a>
-          <a 
-            href="#"
-            style={navLinkStyle}
-            onMouseOver={(e) => e.currentTarget.style.color = navLinkHoverStyle.color || ''}
-            onMouseOut={(e) => e.currentTarget.style.color = navLinkStyle.color || ''}
-          >
-            Settings
-          </a>
-        </nav>
-      </header>
+      <NavHeader activeView="analysis" onNavigate={onNavigate} />
 
       {/* Main Content - Only Input, Recording, Processing Stages */}
       <main style={mainStyle}>
@@ -415,6 +279,22 @@ const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete }) => {
         {stage === 'input' && (
           <div style={{ width: '100%', maxWidth: '28rem', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
             <h2 style={{ fontSize: '1.875rem', fontWeight: 300, marginBottom: '2rem' }}>Analyze your speech</h2>
+            <input
+              type="text"
+              placeholder="Session name (optional)"
+              value={sessionLabel}
+              onChange={(e) => setSessionLabel(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "0.75rem 1rem",
+                borderRadius: "0.5rem",
+                border: "1px solid #e2e8f0",
+                fontSize: "0.875rem",
+                marginBottom: "1.5rem",
+                outline: "none",
+                boxSizing: "border-box",
+              }}
+            />
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1.5rem', width: '100%', marginBottom: '3rem' }}>
               <button
                 onClick={startRecording}

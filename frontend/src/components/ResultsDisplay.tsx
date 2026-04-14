@@ -1,23 +1,16 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import { AnalysisResult } from './VerbalVector';
-import { RefreshCw, BarChart2, Percent, Smile, Mic, Clock, MessageSquare, Hash, FileText } from 'lucide-react';
+import { RefreshCw, Clock, MessageSquare, Hash, FileText } from 'lucide-react';
 import '../App.css';
+import NavHeader from './NavHeader';
 
 interface ResultsDisplayProps {
   analysisResult: AnalysisResult | null;
   onAnalyzeAnother: () => void;
+  onNavigate: (view: "analysis" | "query" | "history") => void;
 }
 
-const headerStyle: React.CSSProperties = {
-    padding: '1.5rem 2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    borderBottom: '1px solid #e2e8f0', position: 'sticky', top: 0, backgroundColor: 'white', zIndex: 10, width: '100%', boxSizing: 'border-box'
-};
-const logoContainerStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '0.5rem' };
-const logoCircleStyle: React.CSSProperties = { width: '2rem', height: '2rem', borderRadius: '9999px', backgroundColor: '#6366f1', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 1px 2px 0 rgba(0,0,0,0.05)' };
-const logoTextStyle: React.CSSProperties = { color: '#fff', fontWeight: 600, fontSize: '1.125rem' };
-const titleStyle: React.CSSProperties = { fontSize: '1.5rem', fontWeight: 300, letterSpacing: '0.025em', color: '#334155' };
-const titleSpanStyle: React.CSSProperties = { fontWeight: 500 };
 const footerStyle: React.CSSProperties = {
     padding: '1rem 2rem', borderTop: '1px solid #e2e8f0', textAlign: 'center',
     fontSize: '0.75rem', color: '#94a3b8', marginTop: '3rem'
@@ -84,7 +77,7 @@ const formatMetric = (value: number | undefined | null, decimals: number = 0, un
     return `${value.toFixed(decimals)}${unit ? ' ' + unit : ''}`;
 };
 
-const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ analysisResult, onAnalyzeAnother }) => {
+const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ analysisResult, onAnalyzeAnother, onNavigate }) => {
 
   // --- DEBUGGING LOGS --- 
   console.log("[ResultsDisplay] Received analysisResult:", analysisResult);
@@ -140,12 +133,7 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ analysisResult, onAnaly
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-        <header style={headerStyle}>
-            <div style={logoContainerStyle}>
-                <div style={logoCircleStyle}><span style={logoTextStyle}>V</span></div>
-                <h1 style={titleStyle}><span style={titleSpanStyle}>Verbal</span> Vector</h1>
-            </div>
-        </header>
+        <NavHeader activeView="analysis" onNavigate={onNavigate} />
 
         <main style={mainResultsStyle}>
             <h2 style={{ fontSize: '1.875rem', fontWeight: 300, marginBottom: '2.5rem', textAlign: 'center' }}>

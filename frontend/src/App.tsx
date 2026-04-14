@@ -1,38 +1,50 @@
-import { useState } from 'react';
-import VerbalVector, { AnalysisResult } from './components/VerbalVector'; // Assuming VerbalVector exports AnalysisResult type
-import ResultsDisplay from './components/ResultsDisplay';
-import './App.css'; // Keep existing App CSS if any
+import { useState } from "react";
+import VerbalVector, { AnalysisResult } from "./components/VerbalVector";
+import ResultsDisplay from "./components/ResultsDisplay";
+import QueryInterface from "./components/QueryInterface";
+import SessionHistory from "./components/SessionHistory";
+import "./App.css";
+
+type View = "analysis" | "results" | "query" | "history";
 
 function App() {
-  // Lift state up: App manages the current view and the analysis data
-  const [currentStage, setCurrentStage] = useState<'input' | 'recording' | 'processing' | 'results'>('input');
+  const [currentView, setCurrentView] = useState<View>("analysis");
   const [analysisData, setAnalysisData] = useState<AnalysisResult | null>(null);
+  const [scopedSourceId, setScopedSourceId] = useState<string>("");
 
-  // Callback for VerbalVector to pass results and signal completion
   const handleAnalysisComplete = (result: AnalysisResult) => {
     setAnalysisData(result);
-    setCurrentStage('results');
+    setCurrentView("results");
   };
 
-  // Callback for ResultsDisplay to go back to the input screen
   const handleAnalyzeAnother = () => {
     setAnalysisData(null);
-    setCurrentStage('input');
+    setCurrentView("analysis");
+  };
+
+  const handleNavigate = (view: "analysis" | "query" | "history") => {
+    setScopedSourceId("");
+    setCurrentView(view);
+  };
+
+  const handleQuerySession = (sourceId: string) => {
+    setScopedSourceId(sourceId);
+    setCurrentView("query");
   };
 
   return (
     <div className="App">
-      {currentStage !== 'results' ? (
-        <VerbalVector
-          // Pass state down only if needed by VerbalVector directly, or manage internally
-          // For now, VerbalVector manages its internal stages until completion
-          onAnalysisComplete={handleAnalysisComplete}
-        />
-      ) : (
-        <ResultsDisplay
-          analysisResult={analysisData} // Pass the fetched/mocked data down
-          onAnalyzeAnother={handleAnalyzeAnother} // Pass the reset function down
-        />
+      {currentView === "analysis" && (
+        <VerbalVector onAnalysisComplete={handleAnalysisComplete} onNavigate={handleNavigate} />
+      )}
+      {currentView === "results" && (
+        <ResultsDisplay analysisResult={analysisData} onAnalyzeAnother={handleAnalyzeAnother} onNavigate={handleNavigate} />
+      )}
+      {currentView === "query" && (
+        <QueryInterface onNavigate={handleNavigate} initialSourceId={scopedSourceId} />
+      )}
+      {currentView === "history" && (
+        <SessionHistory onNavigate={handleNavigate} onQuerySession={handleQuerySession} />
       )}
     </div>
   );
