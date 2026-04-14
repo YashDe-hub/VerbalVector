@@ -16,7 +16,7 @@ config.validate()
 
 app = FastAPI(title="VerbalVector API", version="1.0.0")
 
-ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+ALLOWED_ORIGINS = config.CORS_ALLOWED_ORIGINS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -151,7 +151,4 @@ async def query_transcript(body: QueryRequest):
 
 
 if __name__ == "__main__":
-    host = os.getenv("API_HOST", "0.0.0.0")
-    port = int(os.getenv("API_PORT", "5002"))
-    reload = os.getenv("API_RELOAD", "false").lower() == "true"
-    uvicorn.run("api:app", host=host, port=port, reload=reload)
+    uvicorn.run("api:app", host=config.API_HOST, port=config.API_PORT, reload=config.API_RELOAD)

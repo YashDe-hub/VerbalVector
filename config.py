@@ -24,6 +24,12 @@ GEMINI_LLM_MODEL: str = os.environ.get("GEMINI_LLM_MODEL", "gemini-2.5-flash")
 EMBEDDING_MODEL: str = os.environ.get("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 MAX_FILE_SIZE_BYTES: int = int(os.environ.get("MAX_FILE_SIZE_BYTES", 50 * 1024 * 1024))
 
+# ── Server Settings ─────────────────────────────────────────────────────────
+CORS_ALLOWED_ORIGINS: list[str] = os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+API_HOST: str = os.environ.get("API_HOST", "0.0.0.0")
+API_PORT: int = int(os.environ.get("API_PORT", "5002"))
+API_RELOAD: bool = os.environ.get("API_RELOAD", "false").lower() == "true"
+
 # ── Directory Paths ──────────────────────────────────────────────────────────
 ROOT_DIR = Path(__file__).parent
 UPLOAD_DIR = ROOT_DIR / "data" / "uploads"
