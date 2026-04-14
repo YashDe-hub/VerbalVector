@@ -95,6 +95,55 @@ def generate_feedback(
         return None
 
 
+def generate_rag_answer(
+    query: str,
+    context_chunks: list[dict],
+) -> Optional[dict]:
+    if not context_chunks:
+        return {"answer": "No relevant content was found in your stored transcripts."}
+
+    try:
+        from google import genai
+        from google.genai import types
+    except ImportError:
+        logger.error("google-genai is not installed.")
+        return None
+
+    from config import GEMINI_API_KEY, GEMINI_LLM_MODEL
+
+    if not GEMINI_API_KEY:
+        logger.error("GEMINI_API_KEY is not set.")
+        return None
+
+    context_text = "\n\n".join(
+        f"[{chunk.get('session_label', 'unknown')}] {chunk['text']}"
+        for chunk in context_chunks
+    )
+
+    prompt = _build_rag_prompt(query, context_text)
+
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        response = client.models.generate_content(
+            model=GEMINI_LLM_MODEL,
+            contents=[prompt],
+            config=types.GenerateContentConfig(temperature=0.3),
+        )
+        return {"answer": response.text}
+    except Exception as e:
+        logger.error(f"[LLM] RAG generation failed: {e}", exc_info=True)
+        return None
+
+
+def _build_rag_prompt(query: str, context_text: str) -> str:
+    return f"""You are a helpful assistant that answers questions about the user's recorded presentations and conversations. Use ONLY the transcript excerpts provided below. If the answer is not in the excerpts, say so — do not guess or fabricate information. When possible, mention which session the evidence comes from using the [session label] tags.
+
+**Transcript Excerpts:**
+{context_text}
+
+**Question:** {query}"""
+
+
 def _build_prompt(
     transcript: str,
     features: Dict[str, Any],
