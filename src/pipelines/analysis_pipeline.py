@@ -131,11 +131,11 @@ def _perform_analysis(
 # Vector storage thread
 # ---------------------------------------------------------------------------
 
-def _perform_vector_storage(transcript_text: str, source_id: str, collection) -> None:
+def _perform_vector_storage(transcript_text: str, source_id: str, collection, session_label: str = "") -> None:
     """Stores transcript chunks in ChromaDB. Runs in a background thread."""
     logger.info(f"[Thread VectorStore] Starting for source_id: {source_id}")
     try:
-        success = store_transcript(transcript_text, source_id, collection)
+        success = store_transcript(transcript_text, source_id, collection, session_label=session_label)
         if success:
             logger.info(f"[Thread VectorStore] Stored transcript for {source_id}.")
         else:
@@ -151,6 +151,8 @@ def _perform_vector_storage(transcript_text: str, source_id: str, collection) ->
 def run_analysis_pipeline(
     audio_path: str,
     output_dir: str = "analysis_output",
+    source_id: str = "",
+    session_label: str = "",
 ) -> Optional[Dict[str, Any]]:
     """
     Full pipeline: STT → features + emotion (parallel with vector storage) → LLM feedback.
@@ -202,9 +204,11 @@ def run_analysis_pipeline(
         args=(audio_path, transcript_text, output_dir_path, analysis_results),
         daemon=True,
     )
+    effective_source_id = source_id or base_name
     vector_thread = threading.Thread(
         target=_perform_vector_storage,
-        args=(transcript_text, base_name, collection),
+        args=(transcript_text, effective_source_id, collection),
+        kwargs={"session_label": session_label},
         daemon=True,
     ) if collection else None
 
