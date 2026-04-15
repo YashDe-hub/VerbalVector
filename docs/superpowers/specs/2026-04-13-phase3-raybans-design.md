@@ -35,9 +35,9 @@ The Ray-Ban Meta glasses function as a **standard Bluetooth audio device** when 
 |------|-------|
 | **Microphones** | 5-mic array (beamforming for voice isolation) |
 | **Audio codecs** | AAC, SBC (standard Bluetooth audio codecs) |
-| **Sample rate over Bluetooth** | Typically 16 kHz (HFP/HSP narrowband) or up to 32 kHz (mSBC wideband). Not 48 kHz like a USB studio mic. |
+| **Sample rate over Bluetooth** | 8 kHz (HFP narrowband), 16 kHz (mSBC wideband over HFP), or up to 32 kHz (LE Audio / LC3 codec on BT 5.2+). Not 48 kHz like a USB studio mic. |
 | **Channels** | Mono (mic input over Bluetooth HFP) |
-| **Latency** | ~100-200ms Bluetooth audio latency (acceptable for non-real-time analysis) |
+| **Latency** | ~100-200ms Bluetooth audio latency (acceptable for batch analysis). For streaming/live transcription, this compounds with Deepgram streaming latency (~300-500ms), yielding ~400-700ms total — see the streaming section. |
 
 ### Meta AI Voice Features (Not Accessible)
 
@@ -53,6 +53,7 @@ The "Hey Meta" voice assistant processes audio on-device and through Meta's clou
 3. **Battery life:** ~4 hours of continuous use. Extended recording sessions may drain the glasses.
 4. **No programmatic pairing:** The user must manually pair via Bluetooth settings. There is no API to initiate or manage the Bluetooth connection.
 5. **getUserMedia device selection:** The user must explicitly select the Ray-Ban Meta as the audio input device in the browser's device picker or OS sound settings.
+6. **Safari Bluetooth audio support:** Safari historically drops Bluetooth audio input devices from `enumerateDevices()` results. This can be a hard blocker for Safari users — Chrome is the recommended browser for this integration.
 
 ---
 
@@ -79,7 +80,7 @@ The "Hey Meta" voice assistant processes audio on-device and through Meta's clou
 ```
 Ray-Ban Meta glasses
     |
-    | Bluetooth HFP/HSP (16-32 kHz mono)
+    | Bluetooth HFP (8-16 kHz mono, up to 32 kHz with LE Audio)
     v
 Computer / Phone (paired as audio input device)
     |
@@ -89,7 +90,7 @@ Computer / Phone (paired as audio input device)
     v
 VerbalVector Frontend (existing recording UI or upload form)
     |
-    | POST /api/analyze (multipart audio file)
+    | POST /api/upload (multipart audio file)
     v
 VerbalVector Backend (existing pipeline)
     |
@@ -245,7 +246,7 @@ await connection.start(options)
 ### Key Considerations
 
 - **Encoding:** Bluetooth HFP sends audio as PCM/SBC. The browser's MediaRecorder may re-encode. Use `linear16` (PCM 16-bit) for lowest latency, or `webm-opus` if MediaRecorder prefers that format.
-- **Sample rate:** 16000 Hz for Bluetooth HFP narrowband, or 32000 Hz for mSBC wideband. Must match what the browser actually captures.
+- **Sample rate:** 8000 Hz for HFP narrowband, 16000 Hz for mSBC wideband, or up to 32000 Hz with LE Audio (LC3). Must match what the browser actually captures.
 - **Interim vs final results:** Deepgram sends `is_final=False` for interim (partial) results and `is_final=True` for finalized segments. Only accumulate final results into the transcript.
 - **Connection lifecycle:** One WebSocket connection per recording session. Close cleanly on session end.
 
@@ -289,13 +290,15 @@ When Ray-Ban Meta hardware is available:
 
 3. **Audio quality at 16 kHz:** Is Deepgram Nova-3 transcription accuracy materially worse at 16 kHz mono (Bluetooth HFP) compared to 48 kHz stereo (USB mic)? Preliminary expectation: Nova-3 handles this well, but needs quantitative comparison. (Can be tested without glasses using downsampled audio.)
 
-4. **Wideband Bluetooth (mSBC):** Do the Ray-Ban Meta glasses and the host OS negotiate mSBC (32 kHz) when available? This would improve audio quality. (Requires hardware testing.)
+4. **Wideband Bluetooth (mSBC vs LE Audio):** Do the Ray-Ban Meta glasses and the host OS negotiate mSBC wideband (16 kHz) or LE Audio / LC3 (up to 32 kHz) when available? This would improve audio quality. (Requires hardware testing.)
 
 5. **Simultaneous Meta AI and recording:** Can the user have the "Hey Meta" AI active while simultaneously streaming mic audio to the browser? Or does Meta AI lock the audio input? (Requires hardware testing.)
 
 6. **Continuous recording duration:** What is the practical maximum recording duration before Bluetooth disconnection or battery depletion? (Requires hardware testing.)
 
-7. **Future SDK possibility:** Meta may release a developer SDK for Ray-Ban Meta in the future (especially as they push the AI glasses category). The architecture should be ready to add a streaming path if/when that happens. The streaming pipeline design in this doc serves as a blueprint.
+7. **MediaRecorder codec availability:** `MediaRecorder` codec support varies by browser — Firefox does not support `audio/webm;codecs=opus` the same way Chrome does. The streaming pipeline must check `MediaRecorder.isTypeSupported()` and fall back gracefully. (Can be tested without glasses.)
+
+8. **Future SDK possibility:** Meta may release a developer SDK for Ray-Ban Meta in the future (especially as they push the AI glasses category). The architecture should be ready to add a streaming path if/when that happens. The streaming pipeline design in this doc serves as a blueprint.
 
 ---
 
