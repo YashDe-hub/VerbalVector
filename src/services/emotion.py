@@ -36,15 +36,12 @@ def analyze(audio_path: str) -> Optional[Dict[str, float]]:
     try:
         from hume import HumeClient
         from hume.expression_measurement.batch import Models, Prosody
+        from hume.expression_measurement.batch.types import InferenceBaseRequest
     except ImportError:
         logger.error("hume SDK is not installed. Run: pip install hume")
         return None
 
-    try:
-        from config import HUME_API_KEY
-    except ImportError:
-        import os
-        HUME_API_KEY = os.environ.get("HUME_API_KEY", "")
+    from config import HUME_API_KEY
 
     if not HUME_API_KEY:
         logger.error("HUME_API_KEY is not set.")
@@ -61,8 +58,8 @@ def analyze(audio_path: str) -> Optional[Dict[str, float]]:
         client = HumeClient(api_key=HUME_API_KEY)
 
         job_id = client.expression_measurement.batch.start_inference_job_from_local_file(
-            filepath=[audio_path],
-            models=Models(prosody=Prosody()),
+            file=[audio_path],
+            json=InferenceBaseRequest(models=Models(prosody=Prosody())),
         )
         logger.info(f"[Emotion] Job submitted: {job_id}. Waiting for completion...")
 

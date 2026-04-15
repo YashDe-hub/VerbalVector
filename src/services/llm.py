@@ -10,6 +10,8 @@ Returns a plain markdown string.
 
 import json
 import logging
+import mimetypes
+import time
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -60,8 +62,22 @@ def generate_feedback(
 
         # Upload audio so Gemini can natively hear it
         logger.info("[LLM] Uploading audio to Gemini Files API...")
-        audio_file = client.files.upload(file=audio_path)
+        mime_type, _ = mimetypes.guess_type(audio_path)
+        if mime_type and mime_type.startswith("video/"):
+            mime_type = mime_type.replace("video/", "audio/", 1)
+        audio_file = client.files.upload(
+            file=audio_path,
+            config=types.UploadFileConfig(mime_type=mime_type),
+        )
         logger.info(f"[LLM] Audio uploaded: {audio_file.name}")
+
+        # Poll until the file finishes server-side processing
+        while audio_file.state == types.FileState.PROCESSING:
+            time.sleep(1)
+            audio_file = client.files.get(name=audio_file.name)
+        if audio_file.state != types.FileState.ACTIVE:
+            logger.error(f"[LLM] Gemini file processing failed: state={audio_file.state}")
+            return None
 
         prompt = _build_prompt(transcript, features, emotion_scores)
 
