@@ -3,9 +3,10 @@ import VerbalVector, { AnalysisResult } from "./components/VerbalVector";
 import ResultsDisplay from "./components/ResultsDisplay";
 import QueryInterface from "./components/QueryInterface";
 import SessionHistory from "./components/SessionHistory";
+import type { NavView } from "./api";
 import "./App.css";
 
-type View = "analysis" | "results" | "query" | "history";
+type View = NavView | "results";
 
 function App() {
   const [currentView, setCurrentView] = useState<View>("analysis");
@@ -22,7 +23,7 @@ function App() {
     setCurrentView("analysis");
   };
 
-  const handleNavigate = (view: "analysis" | "query" | "history") => {
+  const handleNavigate = (view: NavView) => {
     setScopedSourceId("");
     setCurrentView(view);
   };
@@ -41,7 +42,7 @@ function App() {
         <ResultsDisplay analysisResult={analysisData} onAnalyzeAnother={handleAnalyzeAnother} onNavigate={handleNavigate} />
       )}
       {currentView === "query" && (
-        <QueryInterface onNavigate={handleNavigate} initialSourceId={scopedSourceId} />
+        <QueryInterface key={scopedSourceId} onNavigate={handleNavigate} initialSourceId={scopedSourceId} />
       )}
       {currentView === "history" && (
         <SessionHistory onNavigate={handleNavigate} onQuerySession={handleQuerySession} />

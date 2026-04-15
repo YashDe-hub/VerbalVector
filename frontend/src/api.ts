@@ -28,6 +28,8 @@ export interface SessionsResponse {
   sessions: Session[];
 }
 
+export type NavView = "analysis" | "query" | "history";
+
 export async function uploadAudio(
   file: File,
   sessionLabel: string = "",
@@ -38,7 +40,6 @@ export async function uploadAudio(
   if (sessionLabel) formData.append("session_label", sessionLabel);
 
   const res = await client.post<UploadResponse>("/api/upload", formData, {
-    headers: { "Content-Type": "multipart/form-data" },
     onUploadProgress: (e) => {
       if (e.total && onUploadProgress) onUploadProgress(Math.round((e.loaded / e.total) * 100));
     },

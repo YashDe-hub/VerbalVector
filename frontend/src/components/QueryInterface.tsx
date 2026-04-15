@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { Search, Loader2, AlertCircle, Filter } from "lucide-react";
 import ReactMarkdown from "react-markdown";
-import { queryTranscripts, getSessions, type QueryResponse, type Session } from "../api";
+import { queryTranscripts, getSessions, type QueryResponse, type Session, type NavView } from "../api";
 import NavHeader from "./NavHeader";
 
 interface QueryInterfaceProps {
-  onNavigate: (view: "analysis" | "query" | "history") => void;
+  onNavigate: (view: NavView) => void;
   initialSourceId?: string;
 }
 
@@ -17,10 +17,12 @@ const QueryInterface: React.FC<QueryInterfaceProps> = ({ onNavigate, initialSour
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [sessionLoadError, setSessionLoadError] = useState(false);
+
   useEffect(() => {
     getSessions()
       .then((res) => setSessions(res.sessions))
-      .catch(() => {});
+      .catch(() => setSessionLoadError(true));
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -34,8 +36,9 @@ const QueryInterface: React.FC<QueryInterfaceProps> = ({ onNavigate, initialSour
     try {
       const res = await queryTranscripts(query, sourceId || undefined);
       setResult(res);
-    } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to get answer. Is the backend running?");
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { detail?: string } } };
+      setError(axiosErr.response?.data?.detail || "Failed to get answer. Is the backend running?");
     } finally {
       setLoading(false);
     }
@@ -89,6 +92,11 @@ const QueryInterface: React.FC<QueryInterfaceProps> = ({ onNavigate, initialSour
             </button>
           </div>
 
+          {sessionLoadError && (
+            <p style={{ fontSize: "0.75rem", color: "#94a3b8", marginBottom: "0.5rem" }}>
+              Could not load session filters.
+            </p>
+          )}
           {sessions.length > 0 && (
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
               <Filter size={14} style={{ color: "#64748b" }} />
@@ -145,9 +153,9 @@ const QueryInterface: React.FC<QueryInterfaceProps> = ({ onNavigate, initialSour
                 <h4 style={{ fontSize: "0.75rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "0.5rem" }}>
                   Sources
                 </h4>
-                {result.sources.map((src, i) => (
+                {result.sources.map((src) => (
                   <div
-                    key={i}
+                    key={src.source_id}
                     style={{
                       fontSize: "0.8rem",
                       color: "#475569",
@@ -161,7 +169,7 @@ const QueryInterface: React.FC<QueryInterfaceProps> = ({ onNavigate, initialSour
                     <span style={{ fontWeight: 500 }}>{src.session_label || src.source_id.slice(0, 12)}</span>
                     {src.text && (
                       <p style={{ color: "#64748b", marginTop: "0.25rem", fontStyle: "italic" }}>
-                        "{src.text.slice(0, 150)}..."
+                        "{src.text.length > 150 ? src.text.slice(0, 150) + "..." : src.text}"
                       </p>
                     )}
                   </div>

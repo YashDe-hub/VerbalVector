@@ -1,42 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Mic, Upload, Pause, AlertCircle, Loader2 } from 'lucide-react';
 import '../App.css'; // Import the CSS file
-import { uploadAudio } from '../api';
+import { uploadAudio, type NavView, type UploadResponse } from '../api';
 import NavHeader from './NavHeader';
 
-// Define expected type for analysis results (adjust as needed based on actual API)
-export interface AnalysisResult {
-  // Update transcript type to match API response
-  transcript: {
-    text: string;
-    language?: string; // Optional if present
-    segments?: any[]; // Optional, type can be refined if needed
-  } | string; // Allow string as fallback? Or just the object?
-  features: {
-    // Primary Score Inputs (some might need normalization)
-    clarity?: number;         // Expecting 0-100
-    engagement?: number;      // Expecting 0-100
-    paceWPM?: number;         // Expecting raw Words Per Minute
-    vocalVariety?: number;    // Expecting 0-100
-
-    // Secondary Metrics (Raw values)
-    fillerWordCount?: number;
-    avgSentenceLength?: number;
-    talkTimeRatio?: number;   // Expecting 0-1 ratio
-    uniqueWordCount?: number;
-    // sentimentScore?: number; // Example: Add if available
-
-    [key: string]: any; // Allow other potential features
-  };
-  feedback: string;
-  overallScore?: number; // Keep API's overall if provided, but we mainly use calculated
-  // Removed top-level clarityScore and engagementScore as they should be in features
-}
+export type AnalysisResult = UploadResponse;
 
 // Define props for VerbalVector
 interface VerbalVectorProps {
   onAnalysisComplete: (result: AnalysisResult) => void;
-  onNavigate: (view: "analysis" | "query" | "history") => void;
+  onNavigate: (view: NavView) => void;
 }
 
 const mainStyle: React.CSSProperties = {
@@ -88,37 +61,28 @@ const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete, onNavig
     }
   }, [stage]);
 
-  // API call effect for processing stage
   useEffect(() => {
-    // Only run when stage becomes 'processing' and we have a file
     if (stage === 'processing' && audioFile) {
       const processFile = async () => {
         setIsLoadingApi(true);
         setApiError(null);
-        console.log(`[API Call] Starting upload for: ${audioFile.name}`);
 
         try {
           const rawResult = await uploadAudio(audioFile, sessionLabel);
-          console.log('[API Call] Success, response data:', rawResult);
-          onAnalysisComplete(rawResult as unknown as AnalysisResult);
-        } catch (err: any) {
-          console.error("[API Call] Error caught:", err);
+          onAnalysisComplete(rawResult);
+        } catch (err: unknown) {
+          const axiosErr = err as { response?: { data?: { error?: string }; status?: number }; request?: unknown; message?: string };
           let errorMessage = 'An unknown error occurred during analysis.';
-          if (err.response) {
-            console.error("[API Call] Error response data:", err.response.data);
-            console.error("[API Call] Error response status:", err.response.status);
-            errorMessage = err.response.data?.error || `Server error: ${err.response.status}`;
-          } else if (err.request) {
-            console.error("[API Call] No response received:", err.request);
+          if (axiosErr.response) {
+            errorMessage = axiosErr.response.data?.error || `Server error: ${axiosErr.response.status}`;
+          } else if (axiosErr.request) {
             errorMessage = 'Could not connect to the analysis server. Is it running?';
-          } else {
-            console.error('[API Call] Error setting up request:', err.message);
-            errorMessage = `Request setup error: ${err.message}`;
+          } else if (axiosErr.message) {
+            errorMessage = `Request setup error: ${axiosErr.message}`;
           }
           setApiError(errorMessage);
           setStage('input');
         } finally {
-          console.log('[API Call] Finally block.');
           setIsLoadingApi(false);
         }
       };

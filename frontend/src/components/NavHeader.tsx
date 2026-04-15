@@ -1,14 +1,13 @@
 import React from "react";
-
-type View = "analysis" | "query" | "history";
+import type { NavView } from "../api";
 
 interface NavHeaderProps {
-  activeView: View;
-  onNavigate: (view: View) => void;
+  activeView: NavView;
+  onNavigate: (view: NavView) => void;
 }
 
 const NavHeader: React.FC<NavHeaderProps> = ({ activeView, onNavigate }) => {
-  const navItems: { label: string; view: View }[] = [
+  const navItems: { label: string; view: NavView }[] = [
     { label: "Analyze", view: "analysis" },
     { label: "Ask", view: "query" },
     { label: "History", view: "history" },

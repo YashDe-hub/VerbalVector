@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Clock, FileText, Loader2, AlertCircle, Database, RefreshCw } from "lucide-react";
-import { getSessions, type Session } from "../api";
+import { getSessions, type Session, type NavView } from "../api";
 import NavHeader from "./NavHeader";
 
 interface SessionHistoryProps {
-  onNavigate: (view: "analysis" | "query" | "history") => void;
+  onNavigate: (view: NavView) => void;
   onQuerySession: (sourceId: string) => void;
 }
 

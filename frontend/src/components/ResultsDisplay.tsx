@@ -4,11 +4,12 @@ import { AnalysisResult } from './VerbalVector';
 import { RefreshCw, Clock, MessageSquare, Hash, FileText } from 'lucide-react';
 import '../App.css';
 import NavHeader from './NavHeader';
+import type { NavView } from '../api';
 
 interface ResultsDisplayProps {
   analysisResult: AnalysisResult | null;
   onAnalyzeAnother: () => void;
-  onNavigate: (view: "analysis" | "query" | "history") => void;
+  onNavigate: (view: NavView) => void;
 }
 
 const footerStyle: React.CSSProperties = {
@@ -78,14 +79,6 @@ const formatMetric = (value: number | undefined | null, decimals: number = 0, un
 };
 
 const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ analysisResult, onAnalyzeAnother, onNavigate }) => {
-
-  // --- DEBUGGING LOGS --- 
-  console.log("[ResultsDisplay] Received analysisResult:", analysisResult);
-  // Log features specifically if available
-  if (analysisResult?.features) {
-      console.log("[ResultsDisplay] Features object received:", analysisResult.features);
-  }
-  // --- END DEBUGGING LOGS ---
 
   if (!analysisResult || !analysisResult.features || !analysisResult.feedback) {
     return (
