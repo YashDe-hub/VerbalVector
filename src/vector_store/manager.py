@@ -117,8 +117,6 @@ def store_transcript(transcript_text: str, source_id: str, collection, session_l
             
         logger.info(f"Split transcript into {len(sentences)} sentence chunks.")
         
-        # TODO: Optional - Implement more sophisticated chunking (e.g., sliding windows, size limits)
-        # For now, using sentences as chunks.
         chunks = sentences
         
         # 2. Create IDs and Metadata

@@ -54,3 +54,24 @@ def test_generate_rag_answer_gemini_error():
         )
 
     assert result is None
+
+
+def test_generate_rag_answer_empty_response():
+    """generate_rag_answer should return None if Gemini returns empty text."""
+    from src.services.llm import generate_rag_answer
+
+    mock_response = MagicMock()
+    mock_response.text = None
+
+    mock_client_instance = MagicMock()
+    mock_client_instance.models.generate_content.return_value = mock_response
+
+    with patch("google.genai.Client", return_value=mock_client_instance), \
+         patch("config.GEMINI_API_KEY", "fake-key"), \
+         patch("config.GEMINI_LLM_MODEL", "gemini-2.5-flash"):
+        result = generate_rag_answer(
+            query="test?",
+            context_chunks=[{"text": "some text", "source_id": "x", "session_label": "y"}],
+        )
+
+    assert result is None

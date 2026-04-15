@@ -94,3 +94,28 @@ async def test_sessions_returns_list(client):
     data = response.json()
     assert len(data["sessions"]) == 1
     assert data["sessions"][0]["source_id"] == "a"
+
+
+@pytest.mark.asyncio
+async def test_query_rag_failure_returns_500(client):
+    """POST /api/query should return 500 when generate_rag_answer returns None."""
+    mock_collection = MagicMock()
+    mock_chunks = [{"text": "chunk", "source_id": "x", "session_label": "Talk"}]
+
+    with (
+        patch("api.initialize_vector_store", return_value=mock_collection),
+        patch("api.search_transcripts", return_value=mock_chunks),
+        patch("api.generate_rag_answer", return_value=None),
+    ):
+        response = await client.post("/api/query", json={"query": "test?"})
+
+    assert response.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_query_vector_store_unavailable_returns_503(client):
+    """POST /api/query should return 503 when vector store is unavailable."""
+    with patch("api.initialize_vector_store", return_value=None):
+        response = await client.post("/api/query", json={"query": "test?"})
+
+    assert response.status_code == 503

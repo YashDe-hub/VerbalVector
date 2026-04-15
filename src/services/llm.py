@@ -43,12 +43,7 @@ def generate_feedback(
         logger.error("google-genai is not installed. Run: pip install google-genai")
         return None
 
-    try:
-        from config import GEMINI_API_KEY, GEMINI_LLM_MODEL
-    except ImportError:
-        import os
-        GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-        GEMINI_LLM_MODEL = os.environ.get("GEMINI_LLM_MODEL", "gemini-2.5-flash")
+    from config import GEMINI_API_KEY, GEMINI_LLM_MODEL
 
     if not GEMINI_API_KEY:
         logger.error("GEMINI_API_KEY is not set.")
@@ -131,6 +126,9 @@ def generate_rag_answer(
             contents=[prompt],
             config=types.GenerateContentConfig(temperature=0.3),
         )
+        if not response.text:
+            logger.error("[RAG] Gemini returned an empty response.")
+            return None
         return {"answer": response.text}
     except Exception as e:
         logger.error(f"[LLM] RAG generation failed: {e}", exc_info=True)
