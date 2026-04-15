@@ -11,8 +11,6 @@ from chromadb.utils import embedding_functions
 
 import config
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # --- Constants ---
@@ -23,7 +21,8 @@ DEFAULT_EF = embedding_functions.SentenceTransformerEmbeddingFunction(model_name
 
 # --- Initialization ---
 _chroma_client = None
-_embedding_function = None # Store the function or model instance globally within the module
+_embedding_function = None
+_collection_cache: dict = {}
 
 def get_chroma_client():
     """Initializes and returns a persistent ChromaDB client."""
@@ -40,53 +39,45 @@ def get_chroma_client():
 
 def get_embedding_function():
     """Returns the embedding function/model instance."""
-    # Using ChromaDB's built-in wrapper for simplicity
     global _embedding_function
     if _embedding_function is None:
         logger.info(f"Using ChromaDB SentenceTransformer embedding function ({_EMBEDDING_MODEL_NAME}).")
         _embedding_function = DEFAULT_EF
-        # Add error handling if needed
     return _embedding_function
 
 def initialize_vector_store(collection_name: str = COLLECTION_NAME):
     """
-    Initializes the vector store: ensures NLTK data is downloaded,
-    connects to ChromaDB, and gets or creates the specified collection.
-
-    Returns:
-        The ChromaDB collection object, or None if initialization fails.
+    Returns the ChromaDB collection, creating it on first call.
+    Subsequent calls return the cached collection object.
     """
+    if collection_name in _collection_cache:
+        return _collection_cache[collection_name]
+
     logger.info(f"Initializing vector store collection: '{collection_name}'...")
     try:
-        # 1. Ensure NLTK sentence tokenizer is available
         try:
             nltk.data.find('tokenizers/punkt')
         except nltk.downloader.DownloadError:
             logger.info("Downloading NLTK 'punkt' tokenizer...")
             nltk.download('punkt', quiet=True)
-            logger.info("'punkt' tokenizer downloaded.")
         except Exception as nltk_e:
              logger.warning(f"Could not find or download NLTK 'punkt': {nltk_e}. Sentence tokenization might fail.")
-             # Decide if this is fatal or can proceed
 
-        # 2. Get ChromaDB client
         client = get_chroma_client()
         if not client:
-            return None # Error logged in get_chroma_client
+            return None
 
-        # 3. Get or create the collection with the embedding function
         embedding_func = get_embedding_function()
         if not embedding_func:
              logger.error("Failed to get embedding function.")
              return None
 
-        logger.info(f"Getting or creating ChromaDB collection '{collection_name}'...")
-        # Pass embedding_function directly if using ChromaDB's wrapper >= 0.4.0
         collection = client.get_or_create_collection(
             name=collection_name,
-            embedding_function=embedding_func, # Use the embedding function instance
-            metadata={"hnsw:space": "cosine"}  # Use cosine distance for sentence embeddings
+            embedding_function=embedding_func,
+            metadata={"hnsw:space": "cosine"},
         )
+        _collection_cache[collection_name] = collection
         logger.info(f"Vector store collection '{collection_name}' ready.")
         return collection
 
@@ -95,7 +86,7 @@ def initialize_vector_store(collection_name: str = COLLECTION_NAME):
         return None
 
 # --- Store Transcript Implementation ---
-def store_transcript(transcript_text: str, source_id: str, collection):
+def store_transcript(transcript_text: str, source_id: str, collection, session_label: str = ""):
     """
     Chunks the transcript, generates embeddings (implicitly via collection), 
     and stores them in the collection.
@@ -126,13 +117,19 @@ def store_transcript(transcript_text: str, source_id: str, collection):
             
         logger.info(f"Split transcript into {len(sentences)} sentence chunks.")
         
-        # TODO: Optional - Implement more sophisticated chunking (e.g., sliding windows, size limits)
-        # For now, using sentences as chunks.
         chunks = sentences
         
         # 2. Create IDs and Metadata
         ids = [f"{source_id}_chunk_{i}" for i in range(len(chunks))]
-        metadata = [{'source': source_id, 'chunk_index': i, 'timestamp': time.time()} for i in range(len(chunks))]
+        metadata = [
+            {
+                "source": source_id,
+                "chunk_index": i,
+                "timestamp": time.time(),
+                "session_label": session_label,
+            }
+            for i in range(len(chunks))
+        ]
         
         # 3. Add to ChromaDB Collection
         # The embedding generation happens automatically here if an embedding_function was provided
@@ -152,42 +149,72 @@ def store_transcript(transcript_text: str, source_id: str, collection):
         return False
 
 # --- Search Transcripts Implementation ---
-def search_transcripts(query: str, collection, n_results: int = 5) -> list[str]:
+def search_transcripts(query: str, collection, n_results: int = 5, source_id: str | None = None) -> list[dict]:
     """
-    Embeds the query (implicitly via collection) and searches the collection 
-    for relevant document chunks.
-    
-    Args:
-        query: The user's search query string.
-        collection: The initialized ChromaDB collection object.
-        n_results: The maximum number of relevant chunks to return.
-        
-    Returns:
-        A list of the relevant document text chunks (strings).
+    Search the collection for relevant document chunks.
+
+    Returns a list of dicts: {"text": str, "source_id": str, "session_label": str}
     """
     if not query or not collection:
         logger.error("search_transcripts called with invalid arguments.")
         return []
-        
+
     logger.info(f"Searching collection '{collection.name}' for query: '{query:.50}...' (n_results={n_results})")
-    
+
     try:
-        # The query embedding also happens automatically via the collection's embedding function
-        results = collection.query(
-            query_texts=[query], # Pass the query text directly
-            n_results=n_results,
-            include=['documents'] # Only need the document text for now
-        )
-        
-        # Extract the documents from the results
-        # Results structure is typically like: {'ids': [[]], 'distances': [[]], 'metadatas': [[]], 'embeddings': None, 'documents': [[doc1, doc2,...]]}
-        retrieved_docs = results.get('documents', [[]])[0]
-        logger.info(f"Retrieved {len(retrieved_docs)} relevant chunks.")
-        return retrieved_docs
-        
+        query_kwargs = {
+            "query_texts": [query],
+            "n_results": n_results,
+            "include": ["documents", "metadatas"],
+        }
+        if source_id:
+            query_kwargs["where"] = {"source": source_id}
+
+        results = collection.query(**query_kwargs)
+
+        docs = results.get("documents", [[]])[0]
+        metas = results.get("metadatas", [[]])[0]
+
+        return [
+            {
+                "text": doc,
+                "source_id": meta.get("source", ""),
+                "session_label": meta.get("session_label", ""),
+            }
+            for doc, meta in zip(docs, metas)
+        ]
+
     except Exception as e:
         logger.error(f"Failed to search transcripts: {e}", exc_info=True)
         return []
+
+def list_sessions(collection) -> list[dict]:
+    """Return a list of unique sessions stored in the collection."""
+    if not collection:
+        return []
+
+    try:
+        all_metadata = collection.get(include=["metadatas"])
+        metadatas = all_metadata.get("metadatas", [])
+
+        sessions: dict[str, dict] = {}
+        for meta in metadatas:
+            source = meta.get("source", "")
+            if source not in sessions:
+                sessions[source] = {
+                    "source_id": source,
+                    "session_label": meta.get("session_label", ""),
+                    "timestamp": meta.get("timestamp", 0),
+                    "chunk_count": 0,
+                }
+            sessions[source]["chunk_count"] += 1
+
+        return sorted(sessions.values(), key=lambda s: s["timestamp"], reverse=True)
+
+    except Exception as e:
+        logger.error(f"Failed to list sessions: {e}", exc_info=True)
+        return []
+
 
 if __name__ == '__main__':
     # Example Usage/Test

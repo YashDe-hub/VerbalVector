@@ -15,6 +15,8 @@ from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
+NO_RELEVANT_CONTENT = "No relevant content was found in your stored transcripts."
+
 
 def generate_feedback(
     audio_path: str,
@@ -41,12 +43,7 @@ def generate_feedback(
         logger.error("google-genai is not installed. Run: pip install google-genai")
         return None
 
-    try:
-        from config import GEMINI_API_KEY, GEMINI_LLM_MODEL
-    except ImportError:
-        import os
-        GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-        GEMINI_LLM_MODEL = os.environ.get("GEMINI_LLM_MODEL", "gemini-2.5-flash")
+    from config import GEMINI_API_KEY, GEMINI_LLM_MODEL
 
     if not GEMINI_API_KEY:
         logger.error("GEMINI_API_KEY is not set.")
@@ -93,6 +90,58 @@ def generate_feedback(
     except Exception as e:
         logger.error(f"[LLM] Gemini generation failed: {e}", exc_info=True)
         return None
+
+
+def generate_rag_answer(
+    query: str,
+    context_chunks: list[dict],
+) -> Optional[dict]:
+    if not context_chunks:
+        return {"answer": NO_RELEVANT_CONTENT}
+
+    try:
+        from google import genai
+        from google.genai import types
+    except ImportError:
+        logger.error("google-genai is not installed.")
+        return None
+
+    from config import GEMINI_API_KEY, GEMINI_LLM_MODEL
+
+    if not GEMINI_API_KEY:
+        logger.error("GEMINI_API_KEY is not set.")
+        return None
+
+    context_text = "\n\n".join(
+        f"[{chunk.get('session_label', 'unknown')}] {chunk['text']}"
+        for chunk in context_chunks
+    )
+
+    prompt = _build_rag_prompt(query, context_text)
+
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        response = client.models.generate_content(
+            model=GEMINI_LLM_MODEL,
+            contents=[prompt],
+            config=types.GenerateContentConfig(temperature=0.3),
+        )
+        if not response.text:
+            logger.error("[RAG] Gemini returned an empty response.")
+            return None
+        return {"answer": response.text}
+    except Exception as e:
+        logger.error(f"[LLM] RAG generation failed: {e}", exc_info=True)
+        return None
+
+
+def _build_rag_prompt(query: str, context_text: str) -> str:
+    return f"""You are a helpful assistant that answers questions about the user's recorded presentations and conversations. Use ONLY the transcript excerpts provided below. If the answer is not in the excerpts, say so — do not guess or fabricate information. When possible, mention which session the evidence comes from using the [session label] tags.
+
+**Transcript Excerpts:**
+{context_text}
+
+**Question:** {query}"""
 
 
 def _build_prompt(
