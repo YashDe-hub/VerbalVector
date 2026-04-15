@@ -5,12 +5,14 @@ import os
 import uuid
 
 import uvicorn
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 import config  # loads .env and exposes API keys / paths
 from src.pipelines.analysis_pipeline import run_analysis_pipeline
+from src.vector_store.manager import initialize_vector_store, search_transcripts, list_sessions
+from src.services.llm import generate_rag_answer
 
 config.validate()
 
@@ -36,6 +38,8 @@ MAX_FILE_SIZE_BYTES = config.MAX_FILE_SIZE_BYTES
 
 class QueryRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=1000)
+    source_id: str | None = Field(None, description="Scope query to a specific session")
+    n_results: int = Field(5, ge=1, le=20, description="Number of context chunks to retrieve")
 
 
 def read_file(file_path: str | None, parser=None):
@@ -59,7 +63,10 @@ async def home():
 
 
 @app.post("/api/upload")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(
+    file: UploadFile = File(...),
+    session_label: str = Form(""),
+):
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file selected")
 
@@ -95,6 +102,8 @@ async def upload_file(file: UploadFile = File(...)):
             run_analysis_pipeline,
             audio_path=filepath,
             output_dir=ANALYSIS_OUTPUT_FOLDER,
+            source_id=safe_name,
+            session_label=session_label or f"Upload {safe_name[:8]}",
         )
 
         if analysis_results is None:
@@ -141,13 +150,43 @@ async def upload_file(file: UploadFile = File(...)):
 
 @app.post("/api/query")
 async def query_transcript(body: QueryRequest):
-    # TODO: load relevant transcript/vectorDB
-    # TODO: perform RAG query using body.query
-    # TODO: return LLM response
+    collection = initialize_vector_store()
+    if not collection:
+        raise HTTPException(status_code=503, detail="Vector store unavailable.")
+
+    chunks = search_transcripts(
+        query=body.query,
+        collection=collection,
+        n_results=body.n_results,
+        source_id=body.source_id,
+    )
+
+    if not chunks:
+        return {
+            "query": body.query,
+            "answer": "No relevant content was found in your stored transcripts.",
+            "sources": [],
+        }
+
+    result = await asyncio.to_thread(generate_rag_answer, body.query, chunks)
+    if not result:
+        raise HTTPException(status_code=500, detail="Failed to generate answer.")
+
     return {
         "query": body.query,
-        "answer": "This is a placeholder answer from the RAG system.",
+        "answer": result["answer"],
+        "sources": chunks,
     }
+
+
+@app.get("/api/sessions")
+async def get_sessions():
+    collection = initialize_vector_store()
+    if not collection:
+        raise HTTPException(status_code=503, detail="Vector store unavailable.")
+
+    sessions = list_sessions(collection)
+    return {"sessions": sessions}
 
 
 if __name__ == "__main__":
