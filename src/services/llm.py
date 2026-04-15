@@ -15,6 +15,8 @@ from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
+NO_RELEVANT_CONTENT = "No relevant content was found in your stored transcripts."
+
 
 def generate_feedback(
     audio_path: str,
@@ -100,7 +102,7 @@ def generate_rag_answer(
     context_chunks: list[dict],
 ) -> Optional[dict]:
     if not context_chunks:
-        return {"answer": "No relevant content was found in your stored transcripts."}
+        return {"answer": NO_RELEVANT_CONTENT}
 
     try:
         from google import genai

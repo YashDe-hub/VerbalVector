@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 import config  # loads .env and exposes API keys / paths
 from src.pipelines.analysis_pipeline import run_analysis_pipeline
 from src.vector_store.manager import initialize_vector_store, search_transcripts, list_sessions
-from src.services.llm import generate_rag_answer
+from src.services.llm import generate_rag_answer, NO_RELEVANT_CONTENT
 
 config.validate()
 
@@ -164,7 +164,7 @@ async def query_transcript(body: QueryRequest):
     if not chunks:
         return {
             "query": body.query,
-            "answer": "No relevant content was found in your stored transcripts.",
+            "answer": NO_RELEVANT_CONTENT,
             "sources": [],
         }
 

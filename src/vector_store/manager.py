@@ -21,7 +21,8 @@ DEFAULT_EF = embedding_functions.SentenceTransformerEmbeddingFunction(model_name
 
 # --- Initialization ---
 _chroma_client = None
-_embedding_function = None # Store the function or model instance globally within the module
+_embedding_function = None
+_collection_cache: dict = {}
 
 def get_chroma_client():
     """Initializes and returns a persistent ChromaDB client."""
@@ -38,53 +39,45 @@ def get_chroma_client():
 
 def get_embedding_function():
     """Returns the embedding function/model instance."""
-    # Using ChromaDB's built-in wrapper for simplicity
     global _embedding_function
     if _embedding_function is None:
         logger.info(f"Using ChromaDB SentenceTransformer embedding function ({_EMBEDDING_MODEL_NAME}).")
         _embedding_function = DEFAULT_EF
-        # Add error handling if needed
     return _embedding_function
 
 def initialize_vector_store(collection_name: str = COLLECTION_NAME):
     """
-    Initializes the vector store: ensures NLTK data is downloaded,
-    connects to ChromaDB, and gets or creates the specified collection.
-
-    Returns:
-        The ChromaDB collection object, or None if initialization fails.
+    Returns the ChromaDB collection, creating it on first call.
+    Subsequent calls return the cached collection object.
     """
+    if collection_name in _collection_cache:
+        return _collection_cache[collection_name]
+
     logger.info(f"Initializing vector store collection: '{collection_name}'...")
     try:
-        # 1. Ensure NLTK sentence tokenizer is available
         try:
             nltk.data.find('tokenizers/punkt')
         except nltk.downloader.DownloadError:
             logger.info("Downloading NLTK 'punkt' tokenizer...")
             nltk.download('punkt', quiet=True)
-            logger.info("'punkt' tokenizer downloaded.")
         except Exception as nltk_e:
              logger.warning(f"Could not find or download NLTK 'punkt': {nltk_e}. Sentence tokenization might fail.")
-             # Decide if this is fatal or can proceed
 
-        # 2. Get ChromaDB client
         client = get_chroma_client()
         if not client:
-            return None # Error logged in get_chroma_client
+            return None
 
-        # 3. Get or create the collection with the embedding function
         embedding_func = get_embedding_function()
         if not embedding_func:
              logger.error("Failed to get embedding function.")
              return None
 
-        logger.info(f"Getting or creating ChromaDB collection '{collection_name}'...")
-        # Pass embedding_function directly if using ChromaDB's wrapper >= 0.4.0
         collection = client.get_or_create_collection(
             name=collection_name,
-            embedding_function=embedding_func, # Use the embedding function instance
-            metadata={"hnsw:space": "cosine"}  # Use cosine distance for sentence embeddings
+            embedding_function=embedding_func,
+            metadata={"hnsw:space": "cosine"},
         )
+        _collection_cache[collection_name] = collection
         logger.info(f"Vector store collection '{collection_name}' ready.")
         return collection
 
