@@ -10,12 +10,22 @@ Returns a plain markdown string.
 
 import json
 import logging
+import mimetypes
+import time
 from pathlib import Path
 from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
 NO_RELEVANT_CONTENT = "No relevant content was found in your stored transcripts."
+
+_GEMINI_FILE_TIMEOUT_SECONDS = 60
+_GEMINI_FILE_POLL_INTERVAL_SECONDS = 1
+
+# MediaRecorder produces audio-only .webm/.ogg with video/* MIME types. Gemini
+# rejects these as failed video files, so we rewrite only these specific cases
+# to audio/* — never real video containers like mp4 or quicktime.
+_AUDIO_ONLY_VIDEO_MIMES = frozenset({"video/webm", "video/ogg"})
 
 
 def generate_feedback(
@@ -60,8 +70,33 @@ def generate_feedback(
 
         # Upload audio so Gemini can natively hear it
         logger.info("[LLM] Uploading audio to Gemini Files API...")
-        audio_file = client.files.upload(file=audio_path)
+        mime_type, _ = mimetypes.guess_type(audio_path)
+        if mime_type in _AUDIO_ONLY_VIDEO_MIMES:
+            new_mime = mime_type.replace("video/", "audio/", 1)
+            logger.info(f"[LLM] Rewriting MediaRecorder MIME {mime_type} → {new_mime}")
+            mime_type = new_mime
+        audio_file = client.files.upload(
+            file=audio_path,
+            config=types.UploadFileConfig(mime_type=mime_type),
+        )
         logger.info(f"[LLM] Audio uploaded: {audio_file.name}")
+
+        # Poll until the file finishes server-side processing (bounded timeout
+        # so the pipeline never hangs if Gemini's Files API stalls).
+        elapsed = 0
+        while (
+            audio_file.state == types.FileState.PROCESSING
+            and elapsed < _GEMINI_FILE_TIMEOUT_SECONDS
+        ):
+            time.sleep(_GEMINI_FILE_POLL_INTERVAL_SECONDS)
+            elapsed += _GEMINI_FILE_POLL_INTERVAL_SECONDS
+            audio_file = client.files.get(name=audio_file.name)
+        if audio_file.state != types.FileState.ACTIVE:
+            logger.error(
+                f"[LLM] Gemini file did not become ACTIVE within {_GEMINI_FILE_TIMEOUT_SECONDS}s "
+                f"(final state: {audio_file.state})"
+            )
+            return None
 
         prompt = _build_prompt(transcript, features, emotion_scores)
 
