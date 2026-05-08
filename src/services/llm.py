@@ -108,11 +108,13 @@ def generate_feedback(
             ),
         )
 
-        # Clean up the uploaded file after generation
+        # Clean up the uploaded file after generation. Non-fatal — feedback
+        # was already generated — but log so leaked files are traceable if
+        # the Files API quota fills up.
         try:
             client.files.delete(name=audio_file.name)
-        except Exception:
-            pass  # Non-fatal
+        except Exception as e:
+            logger.debug(f"[LLM] Failed to delete Gemini file {audio_file.name}: {e}")
 
         feedback_text = response.text.strip() if response.text else None
         if not feedback_text:
