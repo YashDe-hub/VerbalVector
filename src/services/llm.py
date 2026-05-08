@@ -81,48 +81,53 @@ def generate_feedback(
         )
         logger.info(f"[LLM] Audio uploaded: {audio_file.name}")
 
-        # Poll until the file finishes server-side processing (bounded timeout
-        # so the pipeline never hangs if Gemini's Files API stalls).
-        elapsed = 0
-        while (
-            audio_file.state == types.FileState.PROCESSING
-            and elapsed < _GEMINI_FILE_TIMEOUT_SECONDS
-        ):
-            time.sleep(_GEMINI_FILE_POLL_INTERVAL_SECONDS)
-            elapsed += _GEMINI_FILE_POLL_INTERVAL_SECONDS
-            audio_file = client.files.get(name=audio_file.name)
-        if audio_file.state != types.FileState.ACTIVE:
-            logger.error(
-                f"[LLM] Gemini file did not become ACTIVE within {_GEMINI_FILE_TIMEOUT_SECONDS}s "
-                f"(final state: {audio_file.state})"
-            )
-            return None
-
-        prompt = _build_prompt(transcript, features, emotion_scores)
-
-        response = client.models.generate_content(
-            model=GEMINI_LLM_MODEL,
-            contents=[audio_file, prompt],
-            config=types.GenerateContentConfig(
-                temperature=0.6,
-            ),
-        )
-
-        # Clean up the uploaded file after generation. Non-fatal — feedback
-        # was already generated — but log so leaked files are traceable if
-        # the Files API quota fills up.
         try:
-            client.files.delete(name=audio_file.name)
-        except Exception as e:
-            logger.debug(f"[LLM] Failed to delete Gemini file {audio_file.name}: {e}")
+            # Poll until the file finishes server-side processing (bounded timeout
+            # so the pipeline never hangs if Gemini's Files API stalls).
+            elapsed = 0
+            while (
+                audio_file.state == types.FileState.PROCESSING
+                and elapsed < _GEMINI_FILE_TIMEOUT_SECONDS
+            ):
+                time.sleep(_GEMINI_FILE_POLL_INTERVAL_SECONDS)
+                elapsed += _GEMINI_FILE_POLL_INTERVAL_SECONDS
+                audio_file = client.files.get(name=audio_file.name)
+            if audio_file.state != types.FileState.ACTIVE:
+                logger.error(
+                    f"[LLM] Gemini file did not become ACTIVE within {_GEMINI_FILE_TIMEOUT_SECONDS}s "
+                    f"(final state: {audio_file.state})"
+                )
+                return None
 
-        feedback_text = response.text.strip() if response.text else None
-        if not feedback_text:
-            logger.error("[LLM] Gemini returned an empty response.")
-            return None
+            prompt = _build_prompt(transcript, features, emotion_scores)
 
-        logger.info("[LLM] Feedback generated successfully.")
-        return feedback_text
+            response = client.models.generate_content(
+                model=GEMINI_LLM_MODEL,
+                contents=[audio_file, prompt],
+                config=types.GenerateContentConfig(
+                    temperature=0.6,
+                ),
+            )
+
+            feedback_text = response.text.strip() if response.text else None
+            if not feedback_text:
+                logger.error("[LLM] Gemini returned an empty response.")
+                return None
+
+            logger.info("[LLM] Feedback generated successfully.")
+            return feedback_text
+        finally:
+            # Always delete the uploaded file — covers success, polling/timeout,
+            # generation errors, and empty-response paths. Non-fatal: cleanup
+            # failures don't change what the function returns. Logged at warning
+            # so leaked files are visible in production (debug is typically off).
+            try:
+                client.files.delete(name=audio_file.name)
+            except Exception as e:
+                logger.warning(
+                    f"[LLM] Failed to delete Gemini file {audio_file.name}: {e}",
+                    exc_info=True,
+                )
 
     except Exception as e:
         logger.error(f"[LLM] Gemini generation failed: {e}", exc_info=True)
