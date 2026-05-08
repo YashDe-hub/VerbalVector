@@ -33,12 +33,7 @@ def transcribe(audio_path: str) -> Optional[Dict[str, Any]]:
         logger.error("deepgram-sdk is not installed. Run: pip install deepgram-sdk")
         return None
 
-    try:
-        from config import DEEPGRAM_API_KEY, DEEPGRAM_STT_MODEL
-    except ImportError:
-        import os
-        DEEPGRAM_API_KEY = os.environ.get("DEEPGRAM_API_KEY", "")
-        DEEPGRAM_STT_MODEL = os.environ.get("DEEPGRAM_STT_MODEL", "nova-3")
+    from config import DEEPGRAM_API_KEY, DEEPGRAM_STT_MODEL
 
     if not DEEPGRAM_API_KEY:
         logger.error("DEEPGRAM_API_KEY is not set.")
