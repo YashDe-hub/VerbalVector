@@ -256,3 +256,41 @@ def test_generate_feedback_empty_response(fake_audio, features):
         result = generate_feedback(fake_audio, "Hello", features)
 
     assert result is None
+
+
+def test_generate_feedback_deletes_file_when_generate_raises(fake_audio, features):
+    """try/finally guarantee: file cleanup runs even when generate_content raises."""
+    from google.genai import types
+    from src.services.llm import generate_feedback
+
+    audio_file = _make_audio_file(types.FileState.ACTIVE)
+    client = MagicMock()
+    client.files.upload.return_value = audio_file
+    client.models.generate_content.side_effect = Exception("Gemini outage")
+
+    with patch("google.genai.Client", return_value=client), \
+         patch("config.GEMINI_API_KEY", "fake-key"), \
+         patch("config.GEMINI_LLM_MODEL", "gemini-2.5-flash"):
+        result = generate_feedback(fake_audio, "Hello", features)
+
+    assert result is None
+    client.files.delete.assert_called_once_with(name=audio_file.name)
+
+
+def test_generate_feedback_deletes_file_on_failed_state(fake_audio, features):
+    """try/finally guarantee: cleanup runs when polling lands in non-ACTIVE state."""
+    from google.genai import types
+    from src.services.llm import generate_feedback
+
+    initial = _make_audio_file(types.FileState.PROCESSING)
+    failed = _make_audio_file(types.FileState.FAILED)
+    client = _make_client(upload_file=initial, get_files=[failed])
+
+    with patch("google.genai.Client", return_value=client), \
+         patch("config.GEMINI_API_KEY", "fake-key"), \
+         patch("config.GEMINI_LLM_MODEL", "gemini-2.5-flash"), \
+         patch("src.services.llm.time.sleep"):
+        result = generate_feedback(fake_audio, "Hello", features)
+
+    assert result is None
+    client.files.delete.assert_called_once_with(name=failed.name)
