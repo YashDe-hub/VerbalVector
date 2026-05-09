@@ -88,8 +88,54 @@ describe('useAudioDevices', () => {
     expect(result.current.devices.length).toBe(2);
   });
 
+  it('resets selectedDeviceId when the selected device disappears on refresh', async () => {
+    let call = 0;
+    mockMediaDevices(async () => {
+      call += 1;
+      return call === 1
+        ? [
+            makeDevice({ deviceId: 'mic1', kind: 'audioinput', label: 'Built-in' }),
+            makeDevice({ deviceId: 'raybans', kind: 'audioinput', label: 'Ray-Ban Meta' }),
+          ]
+        : [makeDevice({ deviceId: 'mic1', kind: 'audioinput', label: 'Built-in' })];
+    });
+    const { result } = renderHook(() => useAudioDevices());
+    await waitFor(() => expect(result.current.devices.length).toBe(2));
+
+    act(() => result.current.setSelectedDeviceId('raybans'));
+    expect(result.current.selectedDeviceId).toBe('raybans');
+
+    await act(async () => { await result.current.refresh(); });
+
+    // raybans is no longer in the device list — selection should reset to ''
+    expect(result.current.selectedDeviceId).toBe('');
+  });
+
+  it('keeps selectedDeviceId on refresh if the device is still present', async () => {
+    mockMediaDevices(async () => [
+      makeDevice({ deviceId: 'mic1', kind: 'audioinput', label: 'Built-in' }),
+    ]);
+    const { result } = renderHook(() => useAudioDevices());
+    await waitFor(() => expect(result.current.devices.length).toBe(1));
+
+    act(() => result.current.setSelectedDeviceId('mic1'));
+    await act(async () => { await result.current.refresh(); });
+
+    expect(result.current.selectedDeviceId).toBe('mic1');
+  });
+
   it('sets error and empty devices when enumerateDevices rejects', async () => {
     mockMediaDevices(async () => { throw new Error('not allowed'); });
+    const { result } = renderHook(() => useAudioDevices());
+    await waitFor(() => expect(result.current.error).not.toBeNull());
+    expect(result.current.devices).toEqual([]);
+  });
+
+  it('reports error and empty devices when navigator.mediaDevices is undefined', async () => {
+    Object.defineProperty(global.navigator, 'mediaDevices', {
+      configurable: true,
+      value: undefined,
+    });
     const { result } = renderHook(() => useAudioDevices());
     await waitFor(() => expect(result.current.error).not.toBeNull());
     expect(result.current.devices).toEqual([]);

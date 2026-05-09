@@ -140,4 +140,35 @@ describe('VerbalVector device selection integration', () => {
 
     expect(getUserMedia).toHaveBeenLastCalledWith({ audio: true });
   });
+
+  it('surfaces a permission-denied message when getUserMedia rejects with NotAllowedError', async () => {
+    const getUserMedia = vi.fn().mockRejectedValue(
+      new DOMException('Permission denied', 'NotAllowedError'),
+    );
+    setupNavigatorMock([]);
+    // Override the getUserMedia mock with a rejecting one
+    Object.defineProperty(global.navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia,
+        enumerateDevices: vi.fn().mockResolvedValue([]),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      },
+    });
+
+    render(
+      <VerbalVector
+        onAnalysisComplete={() => {}}
+        onNavigate={() => {}}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /record audio/i }));
+
+    // Expect the permission-denied error message text — match the existing copy
+    await waitFor(() => {
+      expect(screen.getByText(/microphone access denied/i)).toBeInTheDocument();
+    });
+  });
 });

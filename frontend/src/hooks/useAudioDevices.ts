@@ -31,6 +31,9 @@ export function useAudioDevices(): UseAudioDevicesReturn {
         .filter((d) => d.kind === 'audioinput')
         .map((d) => ({ deviceId: d.deviceId, label: d.label }));
       setDevices(audio);
+      setSelectedDeviceId((current) =>
+        current && !audio.some((d) => d.deviceId === current) ? '' : current,
+      );
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to enumerate audio devices');
