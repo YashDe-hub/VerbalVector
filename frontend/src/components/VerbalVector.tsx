@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, Upload, Pause, AlertCircle, Loader2 } from 'lucide-react';
+import { Mic, Upload, Pause, AlertCircle, Loader2, ChevronRight, ChevronDown } from 'lucide-react';
 import '../App.css'; // Import the CSS file
 import { uploadAudio, type NavView, type UploadResponse } from '../api';
 import NavHeader from './NavHeader';
+import { useAudioDevices } from '../hooks/useAudioDevices';
+import { AudioDeviceSelector } from './AudioDeviceSelector';
 
 export type AnalysisResult = UploadResponse;
 
@@ -43,6 +45,15 @@ const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete, onNavig
   const [waveformData, setWaveformData] = useState<number[]>([]);
   const [isLoadingApi, setIsLoadingApi] = useState(false); // Loading state for API call
   const [apiError, setApiError] = useState<string | null>(null); // Error state for API call
+
+  const {
+    devices: audioDevices,
+    selectedDeviceId,
+    setSelectedDeviceId,
+    refresh: refreshDevices,
+    hasLabels: deviceLabelsAvailable,
+  } = useAudioDevices();
+  const [helpOpen, setHelpOpen] = useState(false);
 
   // Refs for recording
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -124,8 +135,12 @@ const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete, onNavig
       // Stop any previous stream first
       streamRef.current?.getTracks().forEach(track => track.stop());
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const audioConstraints: MediaTrackConstraints | true = selectedDeviceId
+        ? { deviceId: { exact: selectedDeviceId } }
+        : true;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
       streamRef.current = stream; // Store the stream
+      void refreshDevices();
       console.log("Microphone access granted.");
 
       // Determine preferred MIME type
@@ -259,6 +274,56 @@ const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete, onNavig
                 boxSizing: "border-box",
               }}
             />
+            <AudioDeviceSelector
+              devices={audioDevices}
+              selectedDeviceId={selectedDeviceId}
+              onChange={setSelectedDeviceId}
+              hasLabels={deviceLabelsAvailable}
+              disabled={isRecording || isLoadingApi}
+            />
+            <div style={{ width: '100%', fontSize: '0.875rem', marginBottom: '1.5rem' }}>
+              <button
+                type="button"
+                onClick={() => setHelpOpen((v) => !v)}
+                aria-expanded={helpOpen}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.25rem',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: '#4f46e5',
+                  padding: 0,
+                  fontSize: '0.875rem',
+                }}
+              >
+                {helpOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                Using Ray-Ban Meta as your microphone
+              </button>
+              {helpOpen && (
+                <div style={{
+                  marginTop: '0.5rem',
+                  padding: '0.75rem 1rem',
+                  backgroundColor: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '0.5rem',
+                  color: '#475569',
+                  lineHeight: 1.5,
+                  textAlign: 'left',
+                }}>
+                  <p style={{ margin: 0 }}>
+                    The Ray-Ban Meta glasses connect as a standard Bluetooth headset.
+                  </p>
+                  <ol style={{ margin: '0.5rem 0 0 1rem', padding: 0 }}>
+                    <li>Open your computer's <strong>Bluetooth settings</strong> and pair the glasses.</li>
+                    <li>Confirm the glasses appear as an audio input in your sound settings.</li>
+                    <li>In <strong>Chrome</strong> (recommended — Safari has known issues with Bluetooth audio inputs), refresh this page if you paired after opening it.</li>
+                    <li>Click <em>Record Audio</em> once to grant microphone permission, then pick the glasses in the dropdown above.</li>
+                  </ol>
+                </div>
+              )}
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1.5rem', width: '100%', marginBottom: '3rem' }}>
               <button
                 onClick={startRecording}
