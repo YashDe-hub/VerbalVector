@@ -19,3 +19,15 @@ Every API key, model name, embedding model, directory path, and port number shou
 ## Commit Workflow
 
 Commit format: `type(scope): description` (feat|fix|refactor|test|docs|chore)
+
+## Post-Commit Quality Loop
+
+After every meaningful commit (a feature, bugfix, or logical unit of work — not every micro-commit), run this loop before moving on. Skip stages only when the commit makes them impossible (e.g., no diff to simplify on a pure docs commit).
+
+1. **Simplify** — invoke the `simplify` skill on the changed code. Apply suggested fixes that genuinely improve clarity / reduce duplication; reject the rest with reasoning.
+2. **Verify** — invoke `superpowers:verification-before-completion`. Run the test suite, type-check, lint. No success claims without evidence.
+3. **Code review** — dispatch `pr-review-toolkit:code-reviewer` (and `silent-failure-hunter` if error handling changed, `pr-test-analyzer` if tests changed). Address Critical and Important findings before pushing.
+4. **PR** — push the branch and open the PR with a summary, test plan, and rollback notes.
+5. **Review PR** — invoke `pr-review-toolkit:review-pr` on the open PR for the multi-agent comprehensive sweep. Apply final fixes if anything new surfaces.
+
+This loop applies inside agentic execution flows (e.g., `subagent-driven-development`) too — the runner agent enforces it at task boundaries, not per-step.
