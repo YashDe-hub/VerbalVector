@@ -36,11 +36,13 @@ ROOT_DIR = Path(__file__).parent
 UPLOAD_DIR = ROOT_DIR / "data" / "uploads"
 OUTPUT_DIR = ROOT_DIR / "analysis_output"
 VECTOR_DB_DIR = ROOT_DIR / "vector_db"
+STREAM_AUDIO_DIR = ROOT_DIR / "data" / "streams"
 
 # Ensure runtime directories exist
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 VECTOR_DB_DIR.mkdir(parents=True, exist_ok=True)
+STREAM_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def validate():
