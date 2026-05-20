@@ -232,7 +232,8 @@ async def stream_audio(websocket: WebSocket) -> None:
                         {"type": "transcript", "text": text, "is_final": is_final}
                     )
                 except Exception as e:
-                    logger.warning("Failed to forward transcript (id=%s): %s", short_id, e)
+                    logger.warning("Failed to forward transcript (id=%s): %s — forwarder exiting", short_id, e)
+                    return  # WS is dead; let the main loop discover the disconnect
         except asyncio.CancelledError:
             return
 
@@ -330,6 +331,14 @@ async def stream_audio(websocket: WebSocket) -> None:
                         {"type": "error", "message": "Audio chunk failed", "fatal": True}
                     )
                     return
+
+        # Check if Deepgram emitted a fatal error during the session
+        if transcriber is not None and transcriber.last_error:
+            logger.error("Deepgram error during session (id=%s): %s", short_id, transcriber.last_error)
+            await websocket.send_json(
+                {"type": "error", "message": f"Deepgram error: {transcriber.last_error}", "fatal": True}
+            )
+            return
 
         # End of recording — drain Deepgram, finalize WAV, run analysis.
         try:
