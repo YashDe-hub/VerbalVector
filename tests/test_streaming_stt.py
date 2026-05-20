@@ -166,3 +166,27 @@ async def test_start_failure_raises_streaming_stt_error():
         transcriber = StreamingTranscriber(on_transcript=on_transcript)
         with pytest.raises(StreamingSttError):
             await transcriber.start()
+
+
+@pytest.mark.asyncio
+async def test_double_start_raises():
+    """Calling start() twice must raise — second call would otherwise leak the first connection."""
+    from src.services.streaming_stt import StreamingTranscriber, StreamingSttError
+
+    async def on_transcript(text, is_final):
+        pass
+
+    mock_connection = MagicMock()
+    mock_connection.start = AsyncMock(return_value=True)
+    mock_connection.on = MagicMock()
+
+    mock_client = MagicMock()
+    # Adjust if your SDK path is asynclive instead of asyncwebsocket
+    mock_client.listen.asyncwebsocket.v.return_value = mock_connection
+
+    with patch("deepgram.DeepgramClient", return_value=mock_client), \
+         patch("config.DEEPGRAM_API_KEY", "fake-key"):
+        transcriber = StreamingTranscriber(on_transcript=on_transcript)
+        await transcriber.start()
+        with pytest.raises(StreamingSttError):
+            await transcriber.start()

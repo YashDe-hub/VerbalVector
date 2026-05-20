@@ -38,6 +38,8 @@ class StreamingTranscriber:
         self._connection = None
 
     async def start(self) -> None:
+        if self._connection is not None:
+            raise StreamingSttError("StreamingTranscriber already started.")
         try:
             from deepgram import (
                 DeepgramClient,
@@ -101,6 +103,7 @@ class StreamingTranscriber:
         )
 
     async def send_audio(self, chunk: bytes) -> None:
+        """Forward an audio chunk. Single-producer — do not call concurrently from multiple coroutines."""
         if self._connection is None:
             raise StreamingSttError("Cannot send audio before start().")
         await self._connection.send(chunk)
