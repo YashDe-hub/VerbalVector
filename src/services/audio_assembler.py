@@ -55,11 +55,13 @@ class AudioAssembler:
 
     def close(self) -> Path:
         if not self._closed:
-            self._wave.close()
             self._closed = True
-            logger.info(
-                f"[Assembler] Closed {self._output_path} ({self._bytes_written} bytes)"
-            )
+            try:
+                self._wave.close()
+            finally:
+                logger.info(
+                    f"[Assembler] Closed {self._output_path} ({self._bytes_written} bytes)"
+                )
         return self._output_path
 
     @property

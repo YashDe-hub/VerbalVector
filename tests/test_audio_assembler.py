@@ -35,6 +35,18 @@ def test_bytes_written_tracks_input(tmp_path):
     asm.close()
 
 
+def test_empty_chunk_is_noop(tmp_path):
+    """write_chunk(b'') should not bump bytes_written or produce frames."""
+    from src.services.audio_assembler import AudioAssembler
+
+    asm = AudioAssembler(tmp_path / "s.wav")
+    asm.write_chunk(b"")
+    assert asm.bytes_written == 0
+    asm.close()
+    with wave.open(str(tmp_path / "s.wav"), "rb") as w:
+        assert w.getnframes() == 0
+
+
 def test_zero_chunks_produces_empty_but_valid_wav(tmp_path):
     """Closing with no chunks should still produce a valid (empty) WAV header."""
     from src.services.audio_assembler import AudioAssembler
