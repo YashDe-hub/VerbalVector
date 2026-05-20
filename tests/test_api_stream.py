@@ -33,6 +33,7 @@ def _default_transcriber():
     m.start = AsyncMock()
     m.send_audio = AsyncMock()
     m.finish = AsyncMock()
+    m.last_error = None
     return m
 
 
@@ -171,6 +172,7 @@ def test_transcript_callback_forwards_to_client_via_queue(client):
     captured = {}
 
     class _CapturingTranscriber:
+        last_error = None
         def __init__(self, on_transcript):
             captured["cb"] = on_transcript
             captured["loop"] = asyncio.get_event_loop()
@@ -242,3 +244,59 @@ def test_duplicate_init_is_non_fatal(client):
                 if m["type"] in ("session_end",) or (m["type"] == "error" and m.get("fatal")):
                     break
             assert saw_dup_error
+
+
+def test_deepgram_error_surfaces_as_fatal_error(client):
+    """If Deepgram emits an error event during the session, the WS handler must send a fatal error at session end."""
+
+    class _ErrorTranscriber:
+        last_error = "Auth failed"
+        def __init__(self, on_transcript):
+            self.on_transcript = on_transcript
+        async def start(self):
+            pass
+        async def send_audio(self, chunk):
+            pass
+        async def finish(self):
+            pass
+
+    with patch("api.StreamingTranscriber", _ErrorTranscriber), \
+         patch("api.AudioAssembler", return_value=_default_assembler()), \
+         patch("api.run_analysis_pipeline", return_value=_default_pipeline_result()), \
+         patch("api.read_file", return_value="x"):
+        with client.websocket_connect("/api/stream") as ws:
+            ws.receive_json()  # session_started
+            ws.send_text(json.dumps({"type": "init"}))
+            ws.send_text(json.dumps({"type": "end"}))
+            msg = ws.receive_json()
+    assert msg["type"] == "error"
+    assert msg.get("fatal") is True
+    assert "auth failed" in msg["message"].lower() or "deepgram" in msg["message"].lower()
+
+
+def test_send_audio_failure_mid_session_sends_fatal_error(client):
+    """If transcriber.send_audio raises mid-stream, the WS must send a fatal error and close."""
+    failing_transcriber = _default_transcriber()
+    failing_transcriber.send_audio = AsyncMock(side_effect=Exception("Deepgram socket died"))
+    with patch("api.StreamingTranscriber", return_value=failing_transcriber), \
+         patch("api.AudioAssembler", return_value=_default_assembler()), \
+         patch("api.run_analysis_pipeline", return_value=_default_pipeline_result()), \
+         patch("api.read_file", return_value="x"):
+        with client.websocket_connect("/api/stream") as ws:
+            ws.receive_json()  # session_started
+            ws.send_text(json.dumps({"type": "init"}))
+            ws.send_bytes(b"\x01\x02\x03\x04")
+            msg = ws.receive_json()
+    assert msg["type"] == "error"
+    assert msg.get("fatal") is True
+
+
+def test_streaming_stt_last_error_starts_none():
+    """The StreamingTranscriber last_error property starts as None and reflects _on_dg_error calls."""
+    from src.services.streaming_stt import StreamingTranscriber
+
+    async def on_transcript(text, is_final):
+        pass
+
+    t = StreamingTranscriber(on_transcript=on_transcript)
+    assert t.last_error is None

@@ -36,6 +36,11 @@ class StreamingTranscriber:
     def __init__(self, on_transcript: TranscriptCallback) -> None:
         self._on_transcript = on_transcript
         self._connection = None
+        self._last_error: Optional[str] = None
+
+    @property
+    def last_error(self) -> Optional[str]:
+        return self._last_error
 
     async def start(self) -> None:
         if self._connection is not None:
@@ -75,7 +80,9 @@ class StreamingTranscriber:
                 logger.error(f"[StreamingSTT] Transcript handler error: {e}", exc_info=True)
 
         async def _on_dg_error(connection_arg, error):
-            logger.error(f"[StreamingSTT] Deepgram error: {error}")
+            err_msg = str(error)
+            self._last_error = err_msg
+            logger.error(f"[StreamingSTT] Deepgram error: {err_msg}")
 
         connection.on(LiveTranscriptionEvents.Transcript, _on_dg_transcript)
         connection.on(LiveTranscriptionEvents.Error, _on_dg_error)
