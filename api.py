@@ -214,12 +214,11 @@ async def stream_audio(websocket: WebSocket) -> None:
     await websocket.send_json({"type": "session_started", "session_id": session_id})
 
     audio_path = os.path.join(STREAM_AUDIO_FOLDER, f"{session_id}.wav")
-    assembler = AudioAssembler(audio_path)
+    assembler: AudioAssembler | None = None
     transcriber: StreamingTranscriber | None = None
     forwarder_task: asyncio.Task | None = None
     transcript_queue: asyncio.Queue = asyncio.Queue()
     session_label: str = ""
-    initialized = False
 
     async def on_transcript(text: str, is_final: bool) -> None:
         await transcript_queue.put((text, is_final))
@@ -238,6 +237,7 @@ async def stream_audio(websocket: WebSocket) -> None:
             return
 
     try:
+        assembler = AudioAssembler(audio_path)
         transcriber = StreamingTranscriber(on_transcript=on_transcript)
 
         # Wait for init message with a bounded timeout so abandoned
@@ -281,7 +281,6 @@ async def stream_audio(websocket: WebSocket) -> None:
 
         try:
             await transcriber.start()
-            initialized = True
         except StreamingSttError as e:
             logger.error("STT start failed (id=%s): %s", short_id, e)
             await websocket.send_json(
@@ -390,7 +389,8 @@ async def stream_audio(websocket: WebSocket) -> None:
             forwarder_task.cancel()
             await asyncio.gather(forwarder_task, return_exceptions=True)
         try:
-            assembler.close()
+            if assembler is not None:
+                assembler.close()
         except Exception:
             pass
         try:
