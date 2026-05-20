@@ -20,6 +20,7 @@ HUME_API_KEY: str = os.environ.get("HUME_API_KEY", "")
 
 # ── Model Identifiers ────────────────────────────────────────────────────────
 DEEPGRAM_STT_MODEL: str = os.environ.get("DEEPGRAM_STT_MODEL", "nova-3")
+DEEPGRAM_STT_SAMPLE_RATE: int = int(os.environ.get("DEEPGRAM_STT_SAMPLE_RATE", "16000"))
 GEMINI_LLM_MODEL: str = os.environ.get("GEMINI_LLM_MODEL", "gemini-2.5-flash")
 EMBEDDING_MODEL: str = os.environ.get("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 MAX_FILE_SIZE_BYTES: int = int(os.environ.get("MAX_FILE_SIZE_BYTES", 50 * 1024 * 1024))
