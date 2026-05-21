@@ -207,7 +207,7 @@ describe('VerbalVector device selection integration', () => {
 });
 
 describe('VerbalVector live mode', () => {
-  it('shows a mode toggle in the input stage with Batch selected by default', async () => {
+  it('shows a mode toggle in the input stage with Batch selected by default and can switch to Live', async () => {
     setupNavigatorMock([]);
     render(
       <VerbalVector
@@ -220,6 +220,11 @@ describe('VerbalVector live mode', () => {
     const liveRadio = screen.getByLabelText(/live/i) as HTMLInputElement;
     expect(batchRadio.checked).toBe(true);
     expect(liveRadio.checked).toBe(false);
+
+    await userEvent.click(liveRadio);
+
+    expect(liveRadio.checked).toBe(true);
+    expect(batchRadio.checked).toBe(false);
   });
 
   it('switching to Live mode opens a WebSocket to /api/stream when Record is clicked', async () => {

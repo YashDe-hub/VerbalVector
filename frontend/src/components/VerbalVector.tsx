@@ -59,6 +59,12 @@ const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete, onNavig
   const [mode, setMode] = useState<'batch' | 'live'>('batch');
   const live = useLiveStream();
 
+  // True when audio is actively being captured, regardless of mode.
+  // Used to drive the Stop Recording button state so live mode isn't stuck disabled.
+  const isActivelyRecording = mode === 'live'
+    ? live.status === 'recording'
+    : isRecording;
+
   // Refs for recording
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -236,8 +242,16 @@ const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete, onNavig
   };
 
   const stopLiveRecording = () => {
-    live.stop();
-    setStage('processing');
+    if (live.status === 'recording') {
+      // Normal stop: hook will emit session_end and produce a result
+      live.stop();
+      setStage('processing');
+    } else {
+      // Cancel during 'connecting' — hook returns to idle without session_end,
+      // so there is nothing to process; just go back to input.
+      live.stop();
+      setStage('input');
+    }
   };
 
   const stopRecording = () => {
@@ -428,7 +442,7 @@ const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete, onNavig
             <button
               onClick={mode === 'live' ? stopLiveRecording : stopRecording}
               style={{
-                  backgroundColor: !isRecording ? '#a5b4fc' : '#6366f1', // Disabled color vs active
+                  backgroundColor: !isActivelyRecording ? '#a5b4fc' : '#6366f1', // Disabled color vs active
                   color: 'white',
                   fontWeight: 500,
                   padding: '0.75rem 2rem',
@@ -439,10 +453,10 @@ const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete, onNavig
                   boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1)',
                   transition: 'all 0.2s ease-in-out',
                   transform: 'scale(1)',
-                  cursor: !isRecording ? 'not-allowed' : 'pointer', // Disabled cursor
-                  opacity: !isRecording ? 0.5 : 1, // Disabled opacity
+                  cursor: !isActivelyRecording ? 'not-allowed' : 'pointer', // Disabled cursor
+                  opacity: !isActivelyRecording ? 0.5 : 1, // Disabled opacity
               }}
-              disabled={!isRecording} // Keep the disabled attribute for accessibility
+              disabled={!isActivelyRecording} // Keep the disabled attribute for accessibility
             >
               <Pause size={18} />
               <span>Stop Recording</span>
