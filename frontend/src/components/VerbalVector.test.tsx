@@ -1,4 +1,13 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { vi } from 'vitest';
+vi.mock('../audio/pcmAudioCapture', () => ({
+  PcmAudioCapture: class {
+    async start() { /* noop */ }
+    setHandler() { /* noop */ }
+    async stop() { /* noop */ }
+  },
+}));
+
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import VerbalVector from './VerbalVector';
@@ -41,6 +50,27 @@ const originalMediaDevicesDescriptor = Object.getOwnPropertyDescriptor(
   global.navigator,
   'mediaDevices',
 );
+
+// Capture original WebSocket at module load so afterEach can restore.
+const originalWebSocket = (global as unknown as { WebSocket: typeof WebSocket }).WebSocket;
+
+class FakeWebSocket {
+  static instances: FakeWebSocket[] = [];
+  static reset() { FakeWebSocket.instances = []; }
+  url: string;
+  readyState = 1;
+  sent: (string | ArrayBuffer)[] = [];
+  onopen: ((ev: Event) => void) | null = null;
+  onmessage: ((ev: MessageEvent) => void) | null = null;
+  onclose: ((ev: CloseEvent) => void) | null = null;
+  onerror: ((ev: Event) => void) | null = null;
+  constructor(url: string) {
+    this.url = url;
+    FakeWebSocket.instances.push(this);
+  }
+  send(d: string | ArrayBuffer) { this.sent.push(d); }
+  close() {}
+}
 
 /**
  * Installs navigator.mediaDevices with the given device list and a fresh
@@ -89,6 +119,9 @@ describe('VerbalVector device selection integration', () => {
     } else {
       delete (navigator as unknown as Record<string, unknown>).mediaDevices;
     }
+
+    (global as unknown as { WebSocket: unknown }).WebSocket = originalWebSocket;
+    FakeWebSocket.reset();
   });
 
   it('passes the selected deviceId as an exact constraint to getUserMedia', async () => {
@@ -169,6 +202,96 @@ describe('VerbalVector device selection integration', () => {
     // Expect the permission-denied error message text — match the existing copy
     await waitFor(() => {
       expect(screen.getByText(/microphone access denied/i)).toBeInTheDocument();
+    });
+  });
+});
+
+describe('VerbalVector live mode', () => {
+  beforeEach(() => {
+    FakeWebSocket.reset();
+    (global as unknown as { MediaRecorder: typeof MockMediaRecorder }).MediaRecorder =
+      MockMediaRecorder;
+  });
+
+  afterEach(() => {
+    cleanup();
+    delete (global as unknown as Record<string, unknown>).MediaRecorder;
+    if (originalMediaDevicesDescriptor) {
+      Object.defineProperty(global.navigator, 'mediaDevices', originalMediaDevicesDescriptor);
+    } else {
+      delete (navigator as unknown as Record<string, unknown>).mediaDevices;
+    }
+    (global as unknown as { WebSocket: unknown }).WebSocket = originalWebSocket;
+    FakeWebSocket.reset();
+  });
+
+  it('shows a mode toggle in the input stage with Batch selected by default and can switch to Live', async () => {
+    setupNavigatorMock([]);
+    render(
+      <VerbalVector
+        onAnalysisComplete={() => {}}
+        onNavigate={() => {}}
+      />,
+    );
+
+    const batchRadio = screen.getByLabelText(/batch/i) as HTMLInputElement;
+    const liveRadio = screen.getByLabelText(/live/i) as HTMLInputElement;
+    expect(batchRadio.checked).toBe(true);
+    expect(liveRadio.checked).toBe(false);
+
+    await userEvent.click(liveRadio);
+
+    expect(liveRadio.checked).toBe(true);
+    expect(batchRadio.checked).toBe(false);
+  });
+
+  it('switching to Live mode opens a WebSocket to /api/stream when Record is clicked', async () => {
+    setupNavigatorMock([]);
+    (global as unknown as { WebSocket: unknown }).WebSocket = FakeWebSocket;
+
+    render(
+      <VerbalVector
+        onAnalysisComplete={() => {}}
+        onNavigate={() => {}}
+      />,
+    );
+
+    await userEvent.click(screen.getByLabelText(/live/i));
+    await userEvent.click(screen.getByRole('button', { name: /record audio/i }));
+
+    await waitFor(() => expect(FakeWebSocket.instances.length).toBe(1));
+    expect(FakeWebSocket.instances[0].url).toContain('/api/stream');
+  });
+
+  it('enables the Stop Recording button once live status reaches recording', async () => {
+    setupNavigatorMock([]);
+    (global as unknown as { WebSocket: unknown }).WebSocket = FakeWebSocket;
+
+    render(
+      <VerbalVector
+        onAnalysisComplete={() => {}}
+        onNavigate={() => {}}
+      />,
+    );
+
+    await userEvent.click(screen.getByLabelText(/live/i));
+    await userEvent.click(screen.getByRole('button', { name: /record audio/i }));
+
+    await waitFor(() => expect(FakeWebSocket.instances.length).toBe(1));
+    const ws = FakeWebSocket.instances[0];
+
+    // Drive the WS lifecycle: open + session_started → hook flips to 'recording'
+    if (ws.onopen) ws.onopen(new Event('open'));
+    if (ws.onmessage) {
+      ws.onmessage(new MessageEvent('message', {
+        data: JSON.stringify({ type: 'session_started', session_id: 'test' }),
+      }));
+    }
+
+    // Stop button should now be enabled (covers the 8fc0de4 fix)
+    await waitFor(() => {
+      const stopBtn = screen.getByRole('button', { name: /stop recording/i });
+      expect(stopBtn).not.toBeDisabled();
     });
   });
 });
