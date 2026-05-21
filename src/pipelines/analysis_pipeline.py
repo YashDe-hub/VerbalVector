@@ -138,7 +138,7 @@ def _perform_vector_storage(
     source_id: str,
     collection,
     session_label: str = "",
-    utterances: list[dict] | None = None,  # NEW
+    utterances: list[dict] | None = None,
 ) -> None:
     """Stores transcript chunks in ChromaDB. Runs in a background thread."""
     logger.info(f"[Thread VectorStore] Starting for source_id: {source_id}")

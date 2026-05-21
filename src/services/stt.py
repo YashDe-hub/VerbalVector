@@ -5,7 +5,7 @@ Returns a result dict with the following shape:
     {
         "text":       str,   # full transcript
         "language":   str,   # detected language code (e.g. "en")
-        "segments":   list,  # word-level dicts: {word, start, end, confidence, speaker}
+        "segments":   list,  # word-level: {word, start, end, confidence, speaker (int | None)}
         "utterances": list,  # speaker-grouped: {speaker, text, start, end, confidence}
         "speakers":   list,  # sorted unique speaker IDs
     }
@@ -26,7 +26,8 @@ def transcribe(audio_path: str) -> Optional[Dict[str, Any]]:
         audio_path: Path to the audio file (any format Deepgram supports).
 
     Returns:
-        Dict with keys 'text', 'language', 'segments', or None on error.
+        Dict with keys 'text', 'language', 'segments', 'utterances', 'speakers',
+        or None on error. See the module docstring for the full shape.
     """
     # Import here so the module can be imported even before the SDK is installed
     try:
@@ -61,7 +62,7 @@ def transcribe(audio_path: str) -> Optional[Dict[str, Any]]:
             language="en",
             smart_format=True,
             filler_words=True,   # detects "um", "uh" etc. natively
-            utterances=True,     # sentence-level segments
+            utterances=True,     # speaker-grouped segments (paired with diarize=True)
             punctuate=True,
             diarize=True,
         )

@@ -91,7 +91,7 @@ def store_transcript(
     source_id: str,
     collection,
     session_label: str = "",
-    utterances: list[dict] | None = None,  # NEW
+    utterances: list[dict] | None = None,
 ):
     """
     Chunks the transcript, generates embeddings (implicitly via collection),
@@ -100,6 +100,14 @@ def store_transcript(
     When `utterances` is provided, chunks per-utterance and attaches the
     speaker ID to each chunk's metadata. Otherwise falls back to NLTK
     sentence chunking with no speaker metadata.
+
+    Note:
+        When utterances are provided, chunks are typically longer than NLTK
+        sentence chunks (a single utterance may span multiple sentences).
+        This can degrade RAG retrieval relevance on multi-speaker recordings
+        vs. single-speaker (sentence-chunked) ones. Future optimization:
+        keep sentence chunking and derive per-sentence speaker via majority
+        vote across `segments[].speaker`.
     """
     if not transcript_text or not source_id or not collection:
         logger.error("store_transcript called with invalid arguments.")
