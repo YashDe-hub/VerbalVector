@@ -63,20 +63,39 @@ export class PcmAudioCapture {
       : true;
     this._stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
 
-    this._ctx = await getOrCreateAudioContext(workletUrl);
+    // If anything below this point fails, release the stream so the mic
+    // doesn't stay hot. The caller has no way to recover the capture
+    // instance because captureRef is assigned only AFTER start() returns.
+    try {
+      this._ctx = await getOrCreateAudioContext(workletUrl);
 
-    this._source = this._ctx.createMediaStreamSource(this._stream);
-    this._node = new AudioWorkletNode(this._ctx, 'pcm-downsampler', {
-      processorOptions: { targetSampleRate: targetRate },
-    });
-    this._node.port.onmessage = (event) => {
-      if (this._handler && event.data instanceof ArrayBuffer) {
-        this._handler(event.data);
+      this._source = this._ctx.createMediaStreamSource(this._stream);
+      this._node = new AudioWorkletNode(this._ctx, 'pcm-downsampler', {
+        processorOptions: { targetSampleRate: targetRate },
+      });
+      this._node.port.onmessage = (event) => {
+        if (this._handler && event.data instanceof ArrayBuffer) {
+          this._handler(event.data);
+        }
+      };
+
+      this._source.connect(this._node);
+    } catch (err) {
+      // Roll back any partial setup
+      if (this._node) {
+        this._node.port.onmessage = null;
+        try { this._node.disconnect(); } catch { /* ignore */ }
+        this._node = null;
       }
-    };
-
-    this._source.connect(this._node);
-    // Do NOT connect _node to destination — we don't want to hear ourselves play back.
+      if (this._source) {
+        try { this._source.disconnect(); } catch { /* ignore */ }
+        this._source = null;
+      }
+      this._stream.getTracks().forEach((t) => t.stop());
+      this._stream = null;
+      this._ctx = null;
+      throw err;
+    }
   }
 
   /**

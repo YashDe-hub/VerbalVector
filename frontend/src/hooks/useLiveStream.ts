@@ -63,8 +63,15 @@ export function useLiveStream(options: UseLiveStreamOptions = {}): UseLiveStream
         const capture = captureRef.current;
         if (capture) {
           capture.setHandler((chunk) => {
-            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-              wsRef.current.send(chunk);
+            const ws = wsRef.current;
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            try {
+              ws.send(chunk);
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : 'Connection lost.';
+              setError(msg);
+              setStatus('error');
+              void cleanup();
             }
           });
         }
@@ -137,12 +144,17 @@ export function useLiveStream(options: UseLiveStreamOptions = {}): UseLiveStream
     wsRef.current = ws;
 
     ws.onmessage = (event) => {
+      const raw = typeof event.data === 'string' ? event.data : '';
+      let parsed: ServerMessage;
       try {
-        const parsed = JSON.parse(typeof event.data === 'string' ? event.data : '');
-        void handleServerMessage(parsed as ServerMessage);
+        parsed = JSON.parse(raw) as ServerMessage;
       } catch {
-        // ignore malformed
+        setError('Received unrecognized message from server.');
+        setStatus('error');
+        void cleanup();
+        return;
       }
+      void handleServerMessage(parsed);
     };
     ws.onerror = () => {
       setError('WebSocket error');
