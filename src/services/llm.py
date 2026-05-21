@@ -33,6 +33,7 @@ def generate_feedback(
     transcript: str,
     features: Dict[str, Any],
     emotion_scores: Optional[Dict[str, float]] = None,
+    utterances: Optional[list[dict]] = None,
 ) -> Optional[str]:
     """
     Generate markdown feedback using Gemini 2.5 Flash with native audio.
@@ -42,6 +43,9 @@ def generate_feedback(
         transcript:     Full text transcript from Deepgram.
         features:       Combined Librosa + text feature dict.
         emotion_scores: Hume emotion label → score dict (optional).
+        utterances:     Per-utterance diarization list from STT (optional).
+                        When present and contains multiple distinct speakers,
+                        a per-speaker breakdown is added to the Gemini prompt.
 
     Returns:
         Markdown-formatted feedback string, or None on error.
@@ -99,7 +103,7 @@ def generate_feedback(
                 )
                 return None
 
-            prompt = _build_prompt(transcript, features, emotion_scores)
+            prompt = _build_prompt(transcript, features, emotion_scores, utterances)
 
             response = client.models.generate_content(
                 model=GEMINI_LLM_MODEL,
@@ -190,6 +194,7 @@ def _build_prompt(
     transcript: str,
     features: Dict[str, Any],
     emotion_scores: Optional[Dict[str, float]],
+    utterances: Optional[list[dict]] = None,
 ) -> str:
     """Build the Gemini prompt from transcript, extracted features, and optional Hume emotion scores."""
 
@@ -226,6 +231,27 @@ def _build_prompt(
 Use these scores to add qualitative nuance to your assessment of how the speaker sounds emotionally.
 """
 
+    # Build multi-speaker section when there are 2+ distinct speakers
+    speaker_section = ""
+    if utterances:
+        unique_speakers = sorted({u["speaker"] for u in utterances if u.get("speaker") is not None})
+        if len(unique_speakers) > 1:
+            speaker_lines = []
+            for u in utterances:
+                spk = u.get("speaker")
+                spk_label = f"Speaker {spk}" if spk is not None else "Unknown"
+                speaker_lines.append(f"- {spk_label}: {u['text']}")
+            speaker_block = "\n".join(speaker_lines)
+            speaker_section = f"""
+**Conversation Mode — Multi-Speaker Transcript:**
+
+This recording has {len(unique_speakers)} distinct speakers. When giving feedback, address each speaker by their ID, comment on turn-taking, balance of speaking time, and how the speakers interact. Per-utterance breakdown:
+
+```
+{speaker_block}
+```
+"""
+
     return f"""You are an expert communication coach. You have been given the speaker's audio recording to listen to directly, along with computed features and a transcript. Use EVERYTHING — what you hear AND the data — to give highly specific, evidence-based feedback.
 
 **IMPORTANT:** Do not give generic advice. Every point must cite either a direct quote from the transcript, a specific feature value, or something you can hear in the audio.
@@ -239,7 +265,7 @@ Use these scores to add qualitative nuance to your assessment of how the speaker
 ```json
 {features_json}
 ```
-{emotion_section}
+{emotion_section}{speaker_section}
 **Your Task:**
 Generate high-value feedback following the Markdown structure below precisely.
 
