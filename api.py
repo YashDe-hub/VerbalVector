@@ -220,16 +220,16 @@ async def stream_audio(websocket: WebSocket) -> None:
     transcript_queue: asyncio.Queue = asyncio.Queue()
     session_label: str = ""
 
-    async def on_transcript(text: str, is_final: bool) -> None:
-        await transcript_queue.put((text, is_final))
+    async def on_transcript(text: str, is_final: bool, speaker: int | None) -> None:
+        await transcript_queue.put((text, is_final, speaker))
 
     async def forward_transcripts() -> None:
         try:
             while True:
-                text, is_final = await transcript_queue.get()
+                text, is_final, speaker = await transcript_queue.get()
                 try:
                     await websocket.send_json(
-                        {"type": "transcript", "text": text, "is_final": is_final}
+                        {"type": "transcript", "text": text, "is_final": is_final, "speaker": speaker}
                     )
                 except Exception as e:
                     logger.warning("Failed to forward transcript (id=%s): %s — forwarder exiting", short_id, e)
