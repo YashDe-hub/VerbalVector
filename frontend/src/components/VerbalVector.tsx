@@ -5,6 +5,8 @@ import { uploadAudio, type NavView, type UploadResponse } from '../api';
 import NavHeader from './NavHeader';
 import { useAudioDevices } from '../hooks/useAudioDevices';
 import { AudioDeviceSelector } from './AudioDeviceSelector';
+import { useLiveStream } from '../hooks/useLiveStream';
+import { LiveTranscript } from './LiveTranscript';
 
 export type AnalysisResult = UploadResponse;
 
@@ -54,6 +56,8 @@ const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete, onNavig
     hasLabels: deviceLabelsAvailable,
   } = useAudioDevices();
   const [helpOpen, setHelpOpen] = useState(false);
+  const [mode, setMode] = useState<'batch' | 'live'>('batch');
+  const live = useLiveStream();
 
   // Refs for recording
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -109,6 +113,15 @@ const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete, onNavig
     }
 
   }, [stage, audioFile, onAnalysisComplete, sessionLabel]);
+
+  useEffect(() => {
+    if (live.status === 'completed' && live.result) {
+      onAnalysisComplete(live.result);
+    } else if (live.status === 'error') {
+      setApiError(live.error || 'Live session failed.');
+      setStage('input');
+    }
+  }, [live.status, live.result, live.error, onAnalysisComplete]);
 
   // Cleanup media stream on component unmount
   useEffect(() => {
@@ -212,6 +225,21 @@ const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete, onNavig
     }
   };
 
+  const startLiveRecording = async () => {
+    setApiError(null);
+    try {
+      await live.start(sessionLabel, selectedDeviceId || undefined);
+      setStage('recording');
+    } catch (err) {
+      setApiError(err instanceof Error ? err.message : 'Could not start live session.');
+    }
+  };
+
+  const stopLiveRecording = () => {
+    live.stop();
+    setStage('processing');
+  };
+
   const stopRecording = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       console.log("Stopping MediaRecorder...");
@@ -258,6 +286,30 @@ const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete, onNavig
         {stage === 'input' && (
           <div style={{ width: '100%', maxWidth: '28rem', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
             <h2 style={{ fontSize: '1.875rem', fontWeight: 300, marginBottom: '2rem' }}>Analyze your speech</h2>
+            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1rem', fontSize: '0.875rem' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', cursor: stage === 'input' ? 'pointer' : 'not-allowed' }}>
+                <input
+                  type="radio"
+                  name="mode"
+                  value="batch"
+                  checked={mode === 'batch'}
+                  onChange={() => setMode('batch')}
+                  disabled={stage !== 'input'}
+                />
+                <span>Batch (record + upload)</span>
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', cursor: stage === 'input' ? 'pointer' : 'not-allowed' }}>
+                <input
+                  type="radio"
+                  name="mode"
+                  value="live"
+                  checked={mode === 'live'}
+                  onChange={() => setMode('live')}
+                  disabled={stage !== 'input'}
+                />
+                <span>Live</span>
+              </label>
+            </div>
             <input
               type="text"
               placeholder="Session name (optional)"
@@ -326,7 +378,7 @@ const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete, onNavig
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1.5rem', width: '100%', marginBottom: '3rem' }}>
               <button
-                onClick={startRecording}
+                onClick={mode === 'live' ? startLiveRecording : startRecording}
                 disabled={isRecording || isLoadingApi}
                 className="action-button" // Use class from App.css
               >
@@ -353,24 +405,28 @@ const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete, onNavig
                   <span style={{ fontSize: '1.125rem', fontWeight: 500, color: '#4f46e5' }}>Recording...</span>
                   <span style={{ backgroundColor: '#ef4444', padding: '0.125rem 0.5rem', borderRadius: '9999px', color: 'white', fontSize: '0.75rem', fontWeight: 600, animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' }}>LIVE</span>
               </div>
-              <div style={{ height: '6rem', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: '2px', overflow: 'hidden' }}>
-                  {waveformData.map((height, i) => (
-                  <div
-                      key={i}
-                      style={{
-                          height: `${Math.max(2, height)}%`,
-                          width: '6px', /* w-1.5 */
-                          background: 'linear-gradient(to bottom, #818cf8, #6366f1)', /* bg-gradient-to-b from-indigo-400 to-indigo-500 */
-                          borderRadius: '9999px', /* rounded-full */
-                          flexShrink: 0,
-                          transition: 'all 100ms ease-out',
-                      }}
-                  />
-                  ))}
-              </div>
+              {mode === 'live' ? (
+                <LiveTranscript interim={live.interim} finals={live.finals} status={live.status} />
+              ) : (
+                <div style={{ height: '6rem', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: '2px', overflow: 'hidden' }}>
+                    {waveformData.map((height, i) => (
+                    <div
+                        key={i}
+                        style={{
+                            height: `${Math.max(2, height)}%`,
+                            width: '6px', /* w-1.5 */
+                            background: 'linear-gradient(to bottom, #818cf8, #6366f1)', /* bg-gradient-to-b from-indigo-400 to-indigo-500 */
+                            borderRadius: '9999px', /* rounded-full */
+                            flexShrink: 0,
+                            transition: 'all 100ms ease-out',
+                        }}
+                    />
+                    ))}
+                </div>
+              )}
             </div>
             <button
-              onClick={stopRecording}
+              onClick={mode === 'live' ? stopLiveRecording : stopRecording}
               style={{
                   backgroundColor: !isRecording ? '#a5b4fc' : '#6366f1', // Disabled color vs active
                   color: 'white',
