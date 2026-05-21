@@ -207,6 +207,24 @@ describe('VerbalVector device selection integration', () => {
 });
 
 describe('VerbalVector live mode', () => {
+  beforeEach(() => {
+    FakeWebSocket.reset();
+    (global as unknown as { MediaRecorder: typeof MockMediaRecorder }).MediaRecorder =
+      MockMediaRecorder;
+  });
+
+  afterEach(() => {
+    cleanup();
+    delete (global as unknown as Record<string, unknown>).MediaRecorder;
+    if (originalMediaDevicesDescriptor) {
+      Object.defineProperty(global.navigator, 'mediaDevices', originalMediaDevicesDescriptor);
+    } else {
+      delete (navigator as unknown as Record<string, unknown>).mediaDevices;
+    }
+    (global as unknown as { WebSocket: unknown }).WebSocket = originalWebSocket;
+    FakeWebSocket.reset();
+  });
+
   it('shows a mode toggle in the input stage with Batch selected by default and can switch to Live', async () => {
     setupNavigatorMock([]);
     render(
@@ -243,5 +261,37 @@ describe('VerbalVector live mode', () => {
 
     await waitFor(() => expect(FakeWebSocket.instances.length).toBe(1));
     expect(FakeWebSocket.instances[0].url).toContain('/api/stream');
+  });
+
+  it('enables the Stop Recording button once live status reaches recording', async () => {
+    setupNavigatorMock([]);
+    (global as unknown as { WebSocket: unknown }).WebSocket = FakeWebSocket;
+
+    render(
+      <VerbalVector
+        onAnalysisComplete={() => {}}
+        onNavigate={() => {}}
+      />,
+    );
+
+    await userEvent.click(screen.getByLabelText(/live/i));
+    await userEvent.click(screen.getByRole('button', { name: /record audio/i }));
+
+    await waitFor(() => expect(FakeWebSocket.instances.length).toBe(1));
+    const ws = FakeWebSocket.instances[0];
+
+    // Drive the WS lifecycle: open + session_started → hook flips to 'recording'
+    if (ws.onopen) ws.onopen(new Event('open'));
+    if (ws.onmessage) {
+      ws.onmessage(new MessageEvent('message', {
+        data: JSON.stringify({ type: 'session_started', session_id: 'test' }),
+      }));
+    }
+
+    // Stop button should now be enabled (covers the 8fc0de4 fix)
+    await waitFor(() => {
+      const stopBtn = screen.getByRole('button', { name: /stop recording/i });
+      expect(stopBtn).not.toBeDisabled();
+    });
   });
 });
