@@ -15,7 +15,7 @@ def test_pipeline_passes_session_label_to_vector_storage():
         patch("src.pipelines.analysis_pipeline.store_transcript", return_value=True) as mock_store,
         patch("src.pipelines.analysis_pipeline._perform_analysis") as mock_analysis,
     ):
-        mock_analysis.side_effect = lambda *args: args[3].update({
+        mock_analysis.side_effect = lambda *args: args[4].update({
             "features_path": "/fake/features.json",
             "feedback_path": "/fake/feedback.txt",
             "analysis_error": False,
@@ -48,7 +48,7 @@ def test_pipeline_uses_basename_as_default_source_id():
         patch("src.pipelines.analysis_pipeline.store_transcript", return_value=True) as mock_store,
         patch("src.pipelines.analysis_pipeline._perform_analysis") as mock_analysis,
     ):
-        mock_analysis.side_effect = lambda *args: args[3].update({
+        mock_analysis.side_effect = lambda *args: args[4].update({
             "features_path": "/fake/features.json",
             "feedback_path": "/fake/feedback.txt",
             "analysis_error": False,

@@ -13,6 +13,7 @@ def _make_word(word, start, end, confidence, punctuated_word=None):
     w.start = start
     w.end = end
     w.confidence = confidence
+    w.speaker = None  # default: not diarized; tests that need a speaker set it explicitly
     if punctuated_word is not None:
         w.punctuated_word = punctuated_word
     else:
@@ -78,6 +79,7 @@ def test_transcribe_happy_path(fake_audio):
         "start": 0.0,
         "end": 0.5,
         "confidence": 0.99,
+        "speaker": None,
     }
     assert result["segments"][1]["word"] == "world."
 
@@ -218,3 +220,100 @@ def test_transcribe_handles_words_none(fake_audio):
     assert result is not None
     assert result["text"] == "hello"
     assert result["segments"] == []
+
+
+def test_transcribe_extracts_utterances_with_speakers(fake_audio):
+    """Diarization output: response.results.utterances → top-level utterances list with speaker IDs."""
+    from src.services.stt import transcribe
+
+    words = [
+        _make_word("hello", 0.0, 0.5, 0.99, punctuated_word="Hello"),
+        _make_word("there", 0.5, 1.0, 0.97, punctuated_word="there."),
+    ]
+    response = _make_response(transcript="Hello there. How are you?", words=words)
+    utt1 = MagicMock()
+    utt1.speaker = 0
+    utt1.transcript = "Hello there."
+    utt1.start = 0.0
+    utt1.end = 1.0
+    utt1.confidence = 0.98
+    utt2 = MagicMock()
+    utt2.speaker = 1
+    utt2.transcript = "How are you?"
+    utt2.start = 1.1
+    utt2.end = 2.0
+    utt2.confidence = 0.97
+    response.results.utterances = [utt1, utt2]
+    client = _make_client(response=response)
+
+    with patch("deepgram.DeepgramClient", return_value=client), \
+         patch("config.DEEPGRAM_API_KEY", "fake-key"):
+        result = transcribe(fake_audio)
+
+    assert result is not None
+    assert "utterances" in result
+    assert result["utterances"] == [
+        {"speaker": 0, "text": "Hello there.", "start": 0.0, "end": 1.0, "confidence": 0.98},
+        {"speaker": 1, "text": "How are you?", "start": 1.1, "end": 2.0, "confidence": 0.97},
+    ]
+    assert result["speakers"] == [0, 1]
+
+
+def test_transcribe_handles_response_without_utterances(fake_audio):
+    """Deepgram occasionally returns no utterances list (very short clip). Result should still be valid."""
+    from src.services.stt import transcribe
+
+    words = [_make_word("hi", 0.0, 0.2, 0.95, punctuated_word="Hi.")]
+    response = _make_response(transcript="Hi.", words=words)
+    response.results.utterances = []  # empty list — same as missing
+    client = _make_client(response=response)
+
+    with patch("deepgram.DeepgramClient", return_value=client), \
+         patch("config.DEEPGRAM_API_KEY", "fake-key"):
+        result = transcribe(fake_audio)
+
+    assert result is not None
+    assert result["utterances"] == []
+    assert result["speakers"] == []
+
+
+def test_transcribe_segments_include_speaker_when_diarized(fake_audio):
+    """Word-level segments should include speaker for each word when diarization is on."""
+    from src.services.stt import transcribe
+
+    word_a = _make_word("hello", 0.0, 0.5, 0.99, punctuated_word="Hello")
+    word_a.speaker = 0
+    word_b = _make_word("hi", 0.6, 0.8, 0.97, punctuated_word="Hi")
+    word_b.speaker = 1
+    response = _make_response(transcript="Hello Hi", words=[word_a, word_b])
+    response.results.utterances = []
+    client = _make_client(response=response)
+
+    with patch("deepgram.DeepgramClient", return_value=client), \
+         patch("config.DEEPGRAM_API_KEY", "fake-key"):
+        result = transcribe(fake_audio)
+
+    assert result["segments"][0]["speaker"] == 0
+    assert result["segments"][1]["speaker"] == 1
+
+
+def test_transcribe_passes_diarize_true_to_deepgram(fake_audio):
+    """Options must have diarize=True so Deepgram does the work."""
+    from src.services.stt import transcribe
+
+    response = _make_response(transcript="ok", words=[])
+    response.results.utterances = []
+    client = _make_client(response=response)
+
+    captured = {}
+    def capture_options(buffer_payload, options):
+        captured["diarize"] = getattr(options, "diarize", None)
+        return response
+
+    client.listen.prerecorded.v.return_value.transcribe_file.side_effect = capture_options
+
+    with patch("deepgram.DeepgramClient", return_value=client), \
+         patch("config.DEEPGRAM_API_KEY", "fake-key"):
+        transcribe(fake_audio)
+
+    assert captured["diarize"] is True

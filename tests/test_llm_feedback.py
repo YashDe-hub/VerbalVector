@@ -294,3 +294,84 @@ def test_generate_feedback_deletes_file_on_failed_state(fake_audio, features):
 
     assert result is None
     client.files.delete.assert_called_once_with(name=failed.name)
+
+
+def test_generate_feedback_includes_speaker_section_when_multi_speaker(fake_audio, features):
+    """When utterances has multiple speakers, the Gemini prompt must include a speaker breakdown."""
+    from google.genai import types
+    from src.services.llm import generate_feedback
+
+    captured_prompt = {}
+    audio_file = _make_audio_file(types.FileState.ACTIVE)
+
+    def capture_generate(**kwargs):
+        captured_prompt["text"] = kwargs["contents"][1]
+        return _make_response()
+
+    client = MagicMock()
+    client.files.upload.return_value = audio_file
+    client.models.generate_content.side_effect = capture_generate
+
+    utterances = [
+        {"speaker": 0, "text": "Hello.", "start": 0.0, "end": 0.5, "confidence": 0.98},
+        {"speaker": 1, "text": "Hi.", "start": 0.6, "end": 0.8, "confidence": 0.97},
+    ]
+
+    with patch("google.genai.Client", return_value=client), \
+         patch("config.GEMINI_API_KEY", "fake-key"), \
+         patch("config.GEMINI_LLM_MODEL", "gemini-2.5-flash"):
+        result = generate_feedback(fake_audio, "Hello. Hi.", features, utterances=utterances)
+
+    assert result is not None
+    prompt = captured_prompt["text"]
+    assert "Speaker 0" in prompt or "speaker 0" in prompt.lower()
+    assert "Speaker 1" in prompt or "speaker 1" in prompt.lower()
+    assert "Hello." in prompt
+    assert "Hi." in prompt
+
+
+def test_generate_feedback_omits_speaker_section_when_single_speaker(fake_audio, features):
+    """With only one speaker (or no utterances), the prompt should not have a multi-speaker section."""
+    from google.genai import types
+    from src.services.llm import generate_feedback
+
+    captured_prompt = {}
+    audio_file = _make_audio_file(types.FileState.ACTIVE)
+
+    def capture_generate(**kwargs):
+        captured_prompt["text"] = kwargs["contents"][1]
+        return _make_response()
+
+    client = MagicMock()
+    client.files.upload.return_value = audio_file
+    client.models.generate_content.side_effect = capture_generate
+
+    utterances = [
+        {"speaker": 0, "text": "Hello.", "start": 0.0, "end": 0.5, "confidence": 0.98},
+        {"speaker": 0, "text": "How are you?", "start": 0.6, "end": 1.2, "confidence": 0.97},
+    ]
+
+    with patch("google.genai.Client", return_value=client), \
+         patch("config.GEMINI_API_KEY", "fake-key"), \
+         patch("config.GEMINI_LLM_MODEL", "gemini-2.5-flash"):
+        generate_feedback(fake_audio, "Hello. How are you?", features, utterances=utterances)
+
+    prompt = captured_prompt["text"]
+    assert "Conversation Mode" not in prompt
+    assert "Multi-Speaker" not in prompt
+
+
+def test_generate_feedback_accepts_none_utterances(fake_audio, features):
+    """Backward-compat: callers that don't pass utterances still work."""
+    from google.genai import types
+    from src.services.llm import generate_feedback
+
+    audio_file = _make_audio_file(types.FileState.ACTIVE)
+    client = _make_client(upload_file=audio_file)
+
+    with patch("google.genai.Client", return_value=client), \
+         patch("config.GEMINI_API_KEY", "fake-key"), \
+         patch("config.GEMINI_LLM_MODEL", "gemini-2.5-flash"):
+        result = generate_feedback(fake_audio, "Hello.", features)
+
+    assert result is not None

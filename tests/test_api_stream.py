@@ -172,10 +172,10 @@ def test_transcript_callback_forwards_to_client_via_queue(client):
     captured = {}
 
     class _CapturingTranscriber:
-        last_error = None
         def __init__(self, on_transcript):
             captured["cb"] = on_transcript
             captured["loop"] = asyncio.get_event_loop()
+            self.last_error = None
         async def start(self):
             pass
         async def send_audio(self, chunk):
@@ -192,19 +192,57 @@ def test_transcript_callback_forwards_to_client_via_queue(client):
             ws.send_text(json.dumps({"type": "init"}))
 
             fut = asyncio.run_coroutine_threadsafe(
-                captured["cb"]("hello", False), captured["loop"]
+                captured["cb"]("hello", False, 0), captured["loop"]
             )
             fut.result(timeout=2)
             fut = asyncio.run_coroutine_threadsafe(
-                captured["cb"]("hello world", True), captured["loop"]
+                captured["cb"]("hello world", True, 1), captured["loop"]
             )
             fut.result(timeout=2)
 
             msg1 = ws.receive_json()
-            assert msg1 == {"type": "transcript", "text": "hello", "is_final": False}
+            assert msg1 == {"type": "transcript", "text": "hello", "is_final": False, "speaker": 0}
             msg2 = ws.receive_json()
-            assert msg2 == {"type": "transcript", "text": "hello world", "is_final": True}
+            assert msg2 == {"type": "transcript", "text": "hello world", "is_final": True, "speaker": 1}
 
+            ws.send_text(json.dumps({"type": "end"}))
+            while True:
+                m = ws.receive_json()
+                if m["type"] in ("session_end", "error"):
+                    break
+
+
+def test_transcript_with_no_speaker_serializes_as_null(client):
+    """Interim frames with no words have speaker=None — must serialize as null in JSON."""
+    import asyncio
+    captured = {}
+
+    class _CapturingTranscriber:
+        def __init__(self, on_transcript):
+            captured["cb"] = on_transcript
+            captured["loop"] = asyncio.get_event_loop()
+            self.last_error = None
+        async def start(self):
+            pass
+        async def send_audio(self, chunk):
+            pass
+        async def finish(self):
+            pass
+
+    with patch("api.StreamingTranscriber", side_effect=_CapturingTranscriber), \
+         patch("api.AudioAssembler", return_value=_default_assembler()), \
+         patch("api.run_analysis_pipeline", return_value=_default_pipeline_result()), \
+         patch("api.read_file", return_value="x"):
+        with client.websocket_connect("/api/stream") as ws:
+            ws.receive_json()  # session_started
+            ws.send_text(json.dumps({"type": "init"}))
+
+            fut = asyncio.run_coroutine_threadsafe(
+                captured["cb"]("partial text", False, None), captured["loop"]
+            )
+            fut.result(timeout=2)
+            msg = ws.receive_json()
+            assert msg == {"type": "transcript", "text": "partial text", "is_final": False, "speaker": None}
             ws.send_text(json.dumps({"type": "end"}))
             while True:
                 m = ws.receive_json()

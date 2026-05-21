@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 def _perform_analysis(
     audio_path_str: str,
     transcript_text: str,
+    utterances: list[dict] | None,
     output_dir_path: Path,
     results_dict: dict,
 ) -> None:
@@ -99,6 +100,7 @@ def _perform_analysis(
             transcript=transcript_text,
             features=combined_features,
             emotion_scores=emotion_scores,
+            utterances=utterances,
         )
 
         if feedback_text:
@@ -131,11 +133,23 @@ def _perform_analysis(
 # Vector storage thread
 # ---------------------------------------------------------------------------
 
-def _perform_vector_storage(transcript_text: str, source_id: str, collection, session_label: str = "") -> None:
+def _perform_vector_storage(
+    transcript_text: str,
+    source_id: str,
+    collection,
+    session_label: str = "",
+    utterances: list[dict] | None = None,
+) -> None:
     """Stores transcript chunks in ChromaDB. Runs in a background thread."""
     logger.info(f"[Thread VectorStore] Starting for source_id: {source_id}")
     try:
-        success = store_transcript(transcript_text, source_id, collection, session_label=session_label)
+        success = store_transcript(
+            transcript_text,
+            source_id,
+            collection,
+            session_label=session_label,
+            utterances=utterances,
+        )
         if success:
             logger.info(f"[Thread VectorStore] Stored transcript for {source_id}.")
         else:
@@ -184,6 +198,7 @@ def run_analysis_pipeline(
         return None
 
     transcript_text = stt_result["text"]
+    utterances = stt_result.get("utterances")  # may be None or []
 
     # Save transcript JSON
     transcript_path = output_dir_path / f"{base_name}_transcript.json"
@@ -201,14 +216,14 @@ def run_analysis_pipeline(
 
     analysis_thread = threading.Thread(
         target=_perform_analysis,
-        args=(audio_path, transcript_text, output_dir_path, analysis_results),
+        args=(audio_path, transcript_text, utterances, output_dir_path, analysis_results),
         daemon=True,
     )
     effective_source_id = source_id or base_name
     vector_thread = threading.Thread(
         target=_perform_vector_storage,
         args=(transcript_text, effective_source_id, collection),
-        kwargs={"session_label": session_label},
+        kwargs={"session_label": session_label, "utterances": utterances},
         daemon=True,
     ) if collection else None
 

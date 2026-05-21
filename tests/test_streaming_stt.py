@@ -15,8 +15,8 @@ async def test_start_opens_deepgram_connection_with_correct_options():
     from src.services.streaming_stt import StreamingTranscriber
 
     received = []
-    async def on_transcript(text, is_final):
-        received.append((text, is_final))
+    async def on_transcript(text, is_final, speaker):
+        received.append((text, is_final, speaker))
 
     mock_connection = MagicMock()
     mock_connection.start = AsyncMock(return_value=True)
@@ -48,7 +48,7 @@ async def test_start_opens_deepgram_connection_with_correct_options():
 async def test_send_audio_forwards_chunks_to_deepgram():
     from src.services.streaming_stt import StreamingTranscriber
 
-    async def on_transcript(text, is_final):
+    async def on_transcript(text, is_final, speaker):
         pass
 
     mock_connection = MagicMock()
@@ -76,7 +76,7 @@ async def test_send_audio_forwards_chunks_to_deepgram():
 async def test_finish_closes_deepgram():
     from src.services.streaming_stt import StreamingTranscriber
 
-    async def on_transcript(text, is_final):
+    async def on_transcript(text, is_final, speaker):
         pass
 
     mock_connection = MagicMock()
@@ -99,13 +99,13 @@ async def test_finish_closes_deepgram():
 
 @pytest.mark.asyncio
 async def test_transcript_events_invoke_callback():
-    """When Deepgram emits a transcript event, the registered callback should be invoked with (text, is_final)."""
+    """When Deepgram emits a transcript event, the registered callback should be invoked with (text, is_final, speaker)."""
     from src.services.streaming_stt import StreamingTranscriber
     from deepgram import LiveTranscriptionEvents
 
     received = []
-    async def on_transcript(text, is_final):
-        received.append((text, is_final))
+    async def on_transcript(text, is_final, speaker):
+        received.append((text, is_final, speaker))
 
     handlers = {}
     mock_connection = MagicMock()
@@ -125,19 +125,22 @@ async def test_transcript_events_invoke_callback():
         await transcriber.start()
 
     handler = handlers[LiveTranscriptionEvents.Transcript]
+    alt = MagicMock()
+    alt.transcript = "hello world"
+    alt.words = []  # no words → speaker=None
     result = MagicMock()
-    result.channel.alternatives = [MagicMock(transcript="hello world")]
+    result.channel.alternatives = [alt]
     result.is_final = True
     await handler(mock_connection, result)
 
-    assert received == [("hello world", True)]
+    assert received == [("hello world", True, None)]
 
 
 @pytest.mark.asyncio
 async def test_missing_api_key_raises():
     from src.services.streaming_stt import StreamingTranscriber, StreamingSttError
 
-    async def on_transcript(text, is_final):
+    async def on_transcript(text, is_final, speaker):
         pass
 
     with patch("config.DEEPGRAM_API_KEY", ""):
@@ -151,7 +154,7 @@ async def test_start_failure_raises_streaming_stt_error():
     """If Deepgram.start() returns False, wrap in StreamingSttError."""
     from src.services.streaming_stt import StreamingTranscriber, StreamingSttError
 
-    async def on_transcript(text, is_final):
+    async def on_transcript(text, is_final, speaker):
         pass
 
     mock_connection = MagicMock()
@@ -173,7 +176,7 @@ async def test_double_start_raises():
     """Calling start() twice must raise — second call would otherwise leak the first connection."""
     from src.services.streaming_stt import StreamingTranscriber, StreamingSttError
 
-    async def on_transcript(text, is_final):
+    async def on_transcript(text, is_final, speaker):
         pass
 
     mock_connection = MagicMock()
@@ -190,3 +193,104 @@ async def test_double_start_raises():
         await transcriber.start()
         with pytest.raises(StreamingSttError):
             await transcriber.start()
+
+
+@pytest.mark.asyncio
+async def test_transcript_events_pass_speaker_to_callback():
+    """When Deepgram emits a transcript with a speaker, the callback should receive it."""
+    from src.services.streaming_stt import StreamingTranscriber
+    from deepgram import LiveTranscriptionEvents
+
+    received = []
+    async def on_transcript(text, is_final, speaker):
+        received.append((text, is_final, speaker))
+
+    handlers = {}
+    mock_connection = MagicMock()
+    mock_connection.start = AsyncMock(return_value=True)
+    mock_connection.send = AsyncMock()
+    mock_connection.finish = AsyncMock()
+    def capture_on(event, handler):
+        handlers[event] = handler
+    mock_connection.on = MagicMock(side_effect=capture_on)
+
+    mock_client = MagicMock()
+    mock_client.listen.asyncwebsocket.v.return_value = mock_connection
+
+    with patch("deepgram.DeepgramClient", return_value=mock_client), \
+         patch("config.DEEPGRAM_API_KEY", "fake-key"):
+        transcriber = StreamingTranscriber(on_transcript=on_transcript)
+        await transcriber.start()
+
+    handler = handlers[LiveTranscriptionEvents.Transcript]
+    word = MagicMock()
+    word.speaker = 2
+    alt = MagicMock()
+    alt.transcript = "hello world"
+    alt.words = [word]
+    result = MagicMock()
+    result.channel.alternatives = [alt]
+    result.is_final = True
+    await handler(mock_connection, result)
+
+    assert received == [("hello world", True, 2)]
+
+
+@pytest.mark.asyncio
+async def test_transcript_event_with_no_words_passes_speaker_none():
+    """If the transcript has no words to read a speaker from, the callback gets speaker=None."""
+    from src.services.streaming_stt import StreamingTranscriber
+    from deepgram import LiveTranscriptionEvents
+
+    received = []
+    async def on_transcript(text, is_final, speaker):
+        received.append((text, is_final, speaker))
+
+    handlers = {}
+    mock_connection = MagicMock()
+    mock_connection.start = AsyncMock(return_value=True)
+    mock_connection.send = AsyncMock()
+    mock_connection.finish = AsyncMock()
+    mock_connection.on = MagicMock(side_effect=lambda e, h: handlers.__setitem__(e, h))
+
+    mock_client = MagicMock()
+    mock_client.listen.asyncwebsocket.v.return_value = mock_connection
+
+    with patch("deepgram.DeepgramClient", return_value=mock_client), \
+         patch("config.DEEPGRAM_API_KEY", "fake-key"):
+        transcriber = StreamingTranscriber(on_transcript=on_transcript)
+        await transcriber.start()
+
+    handler = handlers[LiveTranscriptionEvents.Transcript]
+    alt = MagicMock()
+    alt.transcript = "interim text"
+    alt.words = []  # no words → no speaker
+    result = MagicMock()
+    result.channel.alternatives = [alt]
+    result.is_final = False
+    await handler(mock_connection, result)
+
+    assert received == [("interim text", False, None)]
+
+
+@pytest.mark.asyncio
+async def test_start_passes_diarize_true_to_live_options():
+    from src.services.streaming_stt import StreamingTranscriber
+
+    async def on_transcript(text, is_final, speaker):
+        pass
+
+    mock_connection = MagicMock()
+    mock_connection.start = AsyncMock(return_value=True)
+    mock_connection.on = MagicMock()
+
+    mock_client = MagicMock()
+    mock_client.listen.asyncwebsocket.v.return_value = mock_connection
+
+    with patch("deepgram.DeepgramClient", return_value=mock_client), \
+         patch("config.DEEPGRAM_API_KEY", "fake-key"):
+        transcriber = StreamingTranscriber(on_transcript=on_transcript)
+        await transcriber.start()
+
+    options = mock_connection.start.call_args.args[0]
+    assert options.diarize is True

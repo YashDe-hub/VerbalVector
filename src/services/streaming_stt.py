@@ -18,7 +18,7 @@ from typing import Awaitable, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
-TranscriptCallback = Callable[[str, bool], Awaitable[None]]
+TranscriptCallback = Callable[[str, bool, Optional[int]], Awaitable[None]]
 
 
 class StreamingSttError(Exception):
@@ -30,7 +30,7 @@ class StreamingTranscriber:
     Manages an async Deepgram live connection.
 
     Lifecycle: start() -> send_audio() x N -> finish().
-    Transcript events invoke the on_transcript callback with (text, is_final).
+    Transcript events invoke the on_transcript callback with (text, is_final, speaker).
     """
 
     def __init__(self, on_transcript: TranscriptCallback) -> None:
@@ -75,7 +75,13 @@ class StreamingTranscriber:
                 if not text:
                     return  # ignore empty interim frames
                 is_final = bool(result.is_final)
-                await self._on_transcript(text, is_final)
+                # Speaker comes from the words array; take the first word's speaker.
+                # Interim frames may have no words → speaker stays None.
+                speaker: Optional[int] = None
+                words = getattr(alternative, "words", None) or []
+                if words:
+                    speaker = getattr(words[0], "speaker", None)
+                await self._on_transcript(text, is_final, speaker)
             except Exception as e:
                 logger.error(f"[StreamingSTT] Transcript handler error: {e}", exc_info=True)
 
@@ -97,6 +103,7 @@ class StreamingTranscriber:
             smart_format=True,
             filler_words=True,
             punctuate=True,
+            diarize=True,
         )
 
         started = await connection.start(options)
