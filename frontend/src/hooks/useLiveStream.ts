@@ -103,7 +103,8 @@ export function useLiveStream(options: UseLiveStreamOptions = {}): UseLiveStream
   }, [cleanup]);
 
   const start = useCallback(async (sessionLabel: string = '', deviceId?: string) => {
-    if (status !== 'idle' && status !== 'completed' && status !== 'error') {
+    const current = statusRef.current;
+    if (current !== 'idle' && current !== 'completed' && current !== 'error') {
       return;
     }
 
@@ -149,17 +150,32 @@ export function useLiveStream(options: UseLiveStreamOptions = {}): UseLiveStream
       void cleanup();
     };
     ws.onclose = () => {
-      const current = statusRef.current;
-      if (current !== 'completed' && current !== 'error' && current !== 'idle') {
+      const cur = statusRef.current;
+      if (cur !== 'completed' && cur !== 'error' && cur !== 'idle') {
         setError('Connection closed unexpectedly.');
         setStatus('error');
       }
       void cleanup();
     };
-  }, [status, options.createWebSocket, options.createCapture, handleServerMessage, cleanup]);
+  }, [options.createWebSocket, options.createCapture, handleServerMessage, cleanup]);
 
   const stop = useCallback(() => {
-    if (status !== 'recording') return;
+    // Allow stop from 'recording' (normal) AND 'connecting' (user cancels before session_started)
+    const current = statusRef.current;
+    if (current !== 'recording' && current !== 'connecting') return;
+
+    if (current === 'connecting') {
+      // No server session started yet — just tear down locally.
+      // Eagerly update statusRef so that the ws.onclose handler (which fires
+      // synchronously in the mock, and before the useEffect syncs statusRef)
+      // sees 'idle' and does NOT treat the close as an unexpected error.
+      statusRef.current = 'idle';
+      setStatus('idle');
+      void cleanup();
+      return;
+    }
+
+    // Normal stop from recording
     setStatus('stopping');
     if (captureRef.current) {
       void captureRef.current.stop();
@@ -168,7 +184,7 @@ export function useLiveStream(options: UseLiveStreamOptions = {}): UseLiveStream
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'end' }));
     }
-  }, [status]);
+  }, [cleanup]);
 
   useEffect(() => {
     return () => {

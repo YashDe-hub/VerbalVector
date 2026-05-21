@@ -98,19 +98,20 @@ describe('useLiveStream', () => {
   });
 
   it('does NOT open a WebSocket if capture.start() rejects', async () => {
-    const ws = new MockWebSocket('ws://test/api/stream');
+    const createWsSpy = vi.fn((url: string) => new MockWebSocket(url) as unknown as WebSocket);
     const capture = makeMockCapture(async () => {
       throw new Error('Permission denied');
     });
-    const { result } = renderHook(() => useLiveStream(opts(ws, capture)));
+    const { result } = renderHook(() =>
+      useLiveStream({ createWebSocket: createWsSpy, createCapture: () => capture.instance }),
+    );
 
     await act(async () => { await result.current.start(); });
 
     await waitFor(() => expect(result.current.status).toBe('error'));
     expect(result.current.error).toContain('Permission denied');
-    // ws was pre-created in this test body (length=1); the hook's factory must NOT be invoked,
-    // so no additional instances beyond the one created here.
-    expect(MockWebSocket.instances.length).toBe(1);
+    // The hook must NOT have called the WebSocket factory
+    expect(createWsSpy).not.toHaveBeenCalled();
   });
 
   it('sends init and attaches the capture handler on session_started', async () => {
@@ -183,6 +184,25 @@ describe('useLiveStream', () => {
     const endMsg = ws.sent.find((m) => typeof m === 'string' && m.includes('end')) as string | undefined;
     expect(endMsg).toBeDefined();
     expect(JSON.parse(endMsg!)).toEqual({ type: 'end' });
+  });
+
+  it('stop() during connecting cancels cleanly without sending end', async () => {
+    const ws = new MockWebSocket('ws://test/api/stream');
+    const capture = makeMockCapture();
+    const { result } = renderHook(() => useLiveStream(opts(ws, capture)));
+
+    await act(async () => { await result.current.start(); });
+    // Don't fire session_started — we're stuck in 'connecting'
+    expect(result.current.status).toBe('connecting');
+
+    await act(async () => { result.current.stop(); });
+
+    // Should NOT have sent end (server hasn't completed handshake)
+    const endMsg = ws.sent.find((m) => typeof m === 'string' && m.includes('"end"'));
+    expect(endMsg).toBeUndefined();
+    // Should have cleaned up capture and returned to idle
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+    expect(capture.stopMock).toHaveBeenCalled();
   });
 
   it('session_end transitions to completed and populates result', async () => {
