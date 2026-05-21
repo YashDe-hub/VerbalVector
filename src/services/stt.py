@@ -3,9 +3,11 @@ Speech-to-Text service using Deepgram Nova-3 (batch / pre-recorded).
 
 Returns a result dict with the following shape:
     {
-        "text":     str,   # full transcript
-        "language": str,   # detected language code (e.g. "en")
-        "segments": list,  # word-level dicts: {word, start, end, confidence}
+        "text":       str,   # full transcript
+        "language":   str,   # detected language code (e.g. "en")
+        "segments":   list,  # word-level dicts: {word, start, end, confidence, speaker}
+        "utterances": list,  # speaker-grouped: {speaker, text, start, end, confidence}
+        "speakers":   list,  # sorted unique speaker IDs
     }
 """
 
@@ -61,6 +63,7 @@ def transcribe(audio_path: str) -> Optional[Dict[str, Any]]:
             filler_words=True,   # detects "um", "uh" etc. natively
             utterances=True,     # sentence-level segments
             punctuate=True,
+            diarize=True,
         )
 
         response = deepgram.listen.prerecorded.v("1").transcribe_file(payload, options)
@@ -82,14 +85,29 @@ def transcribe(audio_path: str) -> Optional[Dict[str, Any]]:
                 "start": w.start,
                 "end": w.end,
                 "confidence": w.confidence,
+                "speaker": getattr(w, "speaker", None),
             })
+
+        # Extract utterances from diarization
+        utterances = []
+        raw_utterances = getattr(response.results, "utterances", None) or []
+        for u in raw_utterances:
+            utterances.append({
+                "speaker": getattr(u, "speaker", None),
+                "text": getattr(u, "transcript", ""),
+                "start": getattr(u, "start", 0.0),
+                "end": getattr(u, "end", 0.0),
+                "confidence": getattr(u, "confidence", 0.0),
+            })
+
+        speakers = sorted({u["speaker"] for u in utterances if u["speaker"] is not None})
 
         # Deepgram returns detected_language on the channel
         language = getattr(channel, "detected_language", "en") or "en"
 
         logger.info(
             f"[STT] Transcription complete. "
-            f"Language: {language}, Words: {len(segments)}, "
+            f"Speakers: {len(speakers)}, Language: {language}, Words: {len(segments)}, "
             f"Snippet: {transcript_text[:80]}..."
         )
 
@@ -97,6 +115,8 @@ def transcribe(audio_path: str) -> Optional[Dict[str, Any]]:
             "text": transcript_text,
             "language": language,
             "segments": segments,
+            "utterances": utterances,
+            "speakers": speakers,
         }
 
     except Exception as e:
