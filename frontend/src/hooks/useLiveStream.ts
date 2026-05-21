@@ -1,0 +1,180 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { getStreamWsUrl, type ServerMessage, type UploadResponse } from '../api';
+import { PcmAudioCapture } from '../audio/pcmAudioCapture';
+
+export type LiveStreamStatus = 'idle' | 'connecting' | 'recording' | 'stopping' | 'completed' | 'error';
+
+export interface PcmAudioCaptureLike {
+  start(options: { deviceId?: string }): Promise<void>;
+  setHandler(handler: ((chunk: ArrayBuffer) => void) | null): void;
+  stop(): Promise<void>;
+}
+
+export interface UseLiveStreamReturn {
+  status: LiveStreamStatus;
+  interim: string;
+  finals: string[];
+  error: string | null;
+  result: UploadResponse | null;
+  start: (sessionLabel?: string, deviceId?: string) => Promise<void>;
+  stop: () => void;
+}
+
+export interface UseLiveStreamOptions {
+  createWebSocket?: (url: string) => WebSocket;
+  createCapture?: () => PcmAudioCaptureLike;
+}
+
+export function useLiveStream(options: UseLiveStreamOptions = {}): UseLiveStreamReturn {
+  const [status, setStatus] = useState<LiveStreamStatus>('idle');
+  const [interim, setInterim] = useState<string>('');
+  const [finals, setFinals] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<UploadResponse | null>(null);
+
+  const wsRef = useRef<WebSocket | null>(null);
+  const captureRef = useRef<PcmAudioCaptureLike | null>(null);
+  const pendingLabelRef = useRef<string>('');
+  // Status ref so ws.onclose (which fires outside React's render cycle) can
+  // make a decision based on current status without triggering side effects
+  // from inside a setState updater.
+  const statusRef = useRef<LiveStreamStatus>('idle');
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
+  const cleanup = useCallback(async () => {
+    if (captureRef.current) {
+      try { await captureRef.current.stop(); } catch { /* ignore */ }
+      captureRef.current = null;
+    }
+    if (wsRef.current) {
+      try { wsRef.current.close(); } catch { /* ignore */ }
+      wsRef.current = null;
+    }
+  }, []);
+
+  const handleServerMessage = useCallback(async (msg: ServerMessage) => {
+    switch (msg.type) {
+      case 'session_started': {
+        const initPayload = JSON.stringify({ type: 'init', session_label: pendingLabelRef.current });
+        wsRef.current?.send(initPayload);
+        const capture = captureRef.current;
+        if (capture) {
+          capture.setHandler((chunk) => {
+            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+              wsRef.current.send(chunk);
+            }
+          });
+        }
+        setStatus('recording');
+        break;
+      }
+      case 'transcript': {
+        if (msg.is_final) {
+          setFinals((prev) => [...prev, msg.text]);
+          setInterim('');
+        } else {
+          setInterim(msg.text);
+        }
+        break;
+      }
+      case 'session_end': {
+        setResult({
+          message: 'Live session complete.',
+          transcript: msg.transcript,
+          features: msg.features,
+          feedback: msg.feedback,
+        });
+        setStatus('completed');
+        await cleanup();
+        break;
+      }
+      case 'error': {
+        setError(msg.message);
+        if (msg.fatal) {
+          setStatus('error');
+          await cleanup();
+        }
+        break;
+      }
+    }
+  }, [cleanup]);
+
+  const start = useCallback(async (sessionLabel: string = '', deviceId?: string) => {
+    if (status !== 'idle' && status !== 'completed' && status !== 'error') {
+      return;
+    }
+
+    await cleanup();
+
+    setStatus('connecting');
+    setInterim('');
+    setFinals([]);
+    setError(null);
+    setResult(null);
+    pendingLabelRef.current = sessionLabel;
+
+    const createWs = options.createWebSocket ?? ((url: string) => new WebSocket(url));
+    const createCapture = options.createCapture ?? (() => new PcmAudioCapture());
+
+    // 1. Acquire mic + audio pipeline FIRST. If this throws, never open WS.
+    const capture = createCapture();
+    try {
+      await capture.start({ deviceId });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Could not access microphone.';
+      setError(msg);
+      setStatus('error');
+      return;
+    }
+    captureRef.current = capture;
+
+    // 2. Open WebSocket. Handler will be wired up after session_started.
+    const ws = createWs(getStreamWsUrl());
+    wsRef.current = ws;
+
+    ws.onmessage = (event) => {
+      try {
+        const parsed = JSON.parse(typeof event.data === 'string' ? event.data : '');
+        void handleServerMessage(parsed as ServerMessage);
+      } catch {
+        // ignore malformed
+      }
+    };
+    ws.onerror = () => {
+      setError('WebSocket error');
+      setStatus('error');
+      void cleanup();
+    };
+    ws.onclose = () => {
+      const current = statusRef.current;
+      if (current !== 'completed' && current !== 'error' && current !== 'idle') {
+        setError('Connection closed unexpectedly.');
+        setStatus('error');
+      }
+      void cleanup();
+    };
+  }, [status, options.createWebSocket, options.createCapture, handleServerMessage, cleanup]);
+
+  const stop = useCallback(() => {
+    if (status !== 'recording') return;
+    setStatus('stopping');
+    if (captureRef.current) {
+      void captureRef.current.stop();
+      captureRef.current = null;
+    }
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'end' }));
+    }
+  }, [status]);
+
+  useEffect(() => {
+    return () => {
+      void cleanup();
+    };
+  }, [cleanup]);
+
+  return { status, interim, finals, error, result, start, stop };
+}

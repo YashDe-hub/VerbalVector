@@ -64,3 +64,13 @@ export async function getSessions(): Promise<SessionsResponse> {
   const res = await client.get<SessionsResponse>("/api/sessions");
   return res.data;
 }
+
+export type ServerMessage =
+  | { type: 'session_started'; session_id: string }
+  | { type: 'transcript'; text: string; is_final: boolean }
+  | { type: 'session_end'; transcript: UploadResponse['transcript']; features: UploadResponse['features']; feedback: string }
+  | { type: 'error'; message: string; fatal: boolean };
+
+export function getStreamWsUrl(): string {
+  return API_BASE.replace(/^http/, 'ws') + '/api/stream';
+}
