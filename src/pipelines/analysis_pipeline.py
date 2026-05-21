@@ -133,11 +133,23 @@ def _perform_analysis(
 # Vector storage thread
 # ---------------------------------------------------------------------------
 
-def _perform_vector_storage(transcript_text: str, source_id: str, collection, session_label: str = "") -> None:
+def _perform_vector_storage(
+    transcript_text: str,
+    source_id: str,
+    collection,
+    session_label: str = "",
+    utterances: list[dict] | None = None,  # NEW
+) -> None:
     """Stores transcript chunks in ChromaDB. Runs in a background thread."""
     logger.info(f"[Thread VectorStore] Starting for source_id: {source_id}")
     try:
-        success = store_transcript(transcript_text, source_id, collection, session_label=session_label)
+        success = store_transcript(
+            transcript_text,
+            source_id,
+            collection,
+            session_label=session_label,
+            utterances=utterances,
+        )
         if success:
             logger.info(f"[Thread VectorStore] Stored transcript for {source_id}.")
         else:
@@ -211,7 +223,7 @@ def run_analysis_pipeline(
     vector_thread = threading.Thread(
         target=_perform_vector_storage,
         args=(transcript_text, effective_source_id, collection),
-        kwargs={"session_label": session_label},
+        kwargs={"session_label": session_label, "utterances": utterances},
         daemon=True,
     ) if collection else None
 

@@ -86,60 +86,76 @@ def initialize_vector_store(collection_name: str = COLLECTION_NAME):
         return None
 
 # --- Store Transcript Implementation ---
-def store_transcript(transcript_text: str, source_id: str, collection, session_label: str = ""):
+def store_transcript(
+    transcript_text: str,
+    source_id: str,
+    collection,
+    session_label: str = "",
+    utterances: list[dict] | None = None,  # NEW
+):
     """
-    Chunks the transcript, generates embeddings (implicitly via collection), 
+    Chunks the transcript, generates embeddings (implicitly via collection),
     and stores them in the collection.
+
+    When `utterances` is provided, chunks per-utterance and attaches the
+    speaker ID to each chunk's metadata. Otherwise falls back to NLTK
+    sentence chunking with no speaker metadata.
     """
     if not transcript_text or not source_id or not collection:
         logger.error("store_transcript called with invalid arguments.")
         return False
-        
-    logger.info(f"Storing transcript for source_id: '{source_id}'...")
-    
-    try:
-        # 1. Chunk the transcript into sentences
-        # Ensure NLTK data is available (redundant check, but safe)
-        try:
-            sentences = nltk.sent_tokenize(transcript_text)
-        except LookupError:
-            logger.warning("NLTK 'punkt' tokenizer not found. Falling back to simple newline split.")
-            # Fallback or re-download
-            nltk.download('punkt', quiet=True)
-            sentences = nltk.sent_tokenize(transcript_text)
-        except Exception as e:
-             logger.error(f"Failed to tokenize transcript: {e}")
-             return False # Cannot proceed without chunks
 
-        if not sentences:
-            logger.warning(f"Transcript for '{source_id}' resulted in zero sentences after tokenization.")
+    logger.info(f"Storing transcript for source_id: '{source_id}'...")
+
+    try:
+        # Build chunks + per-chunk speakers
+        if utterances:
+            chunks = [u["text"] for u in utterances if u.get("text")]
+            speakers = [u.get("speaker") for u in utterances if u.get("text")]
+            logger.info(f"Chunking by {len(chunks)} utterance(s) with diarization.")
+        else:
+            try:
+                sentences = nltk.sent_tokenize(transcript_text)
+            except LookupError:
+                logger.warning("NLTK 'punkt' tokenizer not found. Downloading...")
+                nltk.download('punkt', quiet=True)
+                sentences = nltk.sent_tokenize(transcript_text)
+            except Exception as e:
+                logger.error(f"Failed to tokenize transcript: {e}")
+                return False
+
+            if not sentences:
+                logger.warning(f"Transcript for '{source_id}' resulted in zero sentences.")
+                return False
+
+            chunks = sentences
+            speakers = [None] * len(chunks)
+            logger.info(f"Split transcript into {len(sentences)} sentence chunks.")
+
+        if not chunks:
             return False
-            
-        logger.info(f"Split transcript into {len(sentences)} sentence chunks.")
-        
-        chunks = sentences
-        
-        # 2. Create IDs and Metadata
+
+        # Create IDs and metadata
         ids = [f"{source_id}_chunk_{i}" for i in range(len(chunks))]
-        metadata = [
-            {
+        metadata = []
+        ts = time.time()
+        for i in range(len(chunks)):
+            entry = {
                 "source": source_id,
                 "chunk_index": i,
-                "timestamp": time.time(),
+                "timestamp": ts,
                 "session_label": session_label,
             }
-            for i in range(len(chunks))
-        ]
-        
-        # 3. Add to ChromaDB Collection
-        # The embedding generation happens automatically here if an embedding_function was provided
-        # when the collection was created/retrieved.
+            if speakers[i] is not None:
+                entry["speaker"] = speakers[i]
+            metadata.append(entry)
+
         logger.info(f"Adding {len(chunks)} chunks to collection '{collection.name}'...")
         collection.add(
-            embeddings=None, # Let the collection's embedding function handle this
+            embeddings=None,
             documents=chunks,
             metadatas=metadata,
-            ids=ids
+            ids=ids,
         )
         logger.info(f"Successfully stored transcript chunks for '{source_id}'.")
         return True
