@@ -4,7 +4,7 @@ import { AnalysisResult } from './VerbalVector';
 import { RefreshCw, Clock, MessageSquare, Hash, FileText } from 'lucide-react';
 import '../App.css';
 import NavHeader from './NavHeader';
-import type { NavView } from '../api';
+import type { NavView, UploadResponse } from '../api';
 
 interface ResultsDisplayProps {
   analysisResult: AnalysisResult | null;
@@ -77,6 +77,36 @@ const formatMetric = (value: number | undefined | null, decimals: number = 0, un
     if (typeof value !== 'number' || isNaN(value)) return 'N/A';
     return `${value.toFixed(decimals)}${unit ? ' ' + unit : ''}`;
 };
+
+function renderTranscript(transcript: UploadResponse['transcript']): React.ReactElement {
+    // Legacy string shape
+    if (typeof transcript === 'string') {
+        return <pre style={transcriptBoxStyle}>{transcript}</pre>;
+    }
+    if (!transcript) {
+        return <pre style={transcriptBoxStyle}>Transcript not available.</pre>;
+    }
+
+    const { utterances, speakers } = transcript;
+
+    // Multi-speaker: render speaker-labeled list
+    if (utterances && utterances.length > 0 && speakers && speakers.length > 1) {
+        return (
+            <div style={transcriptBoxStyle}>
+                {utterances.map((u, i) => (
+                    <div key={i} style={{ marginBottom: '0.5rem' }}>
+                        {/* Null-speaker utterances render unlabeled — avoids 'Speaker null:' display */}
+                        {u.speaker !== null && <strong>Speaker {u.speaker}: </strong>}
+                        <span>{u.text}</span>
+                    </div>
+                ))}
+            </div>
+        );
+    }
+
+    // Fall back to flat text (single speaker or no utterances)
+    return <pre style={transcriptBoxStyle}>{transcript.text || 'Transcript not available.'}</pre>;
+}
 
 const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ analysisResult, onAnalyzeAnother, onNavigate }) => {
 
@@ -211,11 +241,7 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ analysisResult, onAnaly
             {/* --- Transcript Section (Reads from transcript object) --- */}
             <div style={sectionStyle}>
                 <h3 style={sectionTitleStyle}>Transcript</h3>
-                <pre style={transcriptBoxStyle}>
-                    {(typeof analysisResult.transcript === 'object' && analysisResult.transcript?.text)
-                        ? analysisResult.transcript.text
-                        : (typeof analysisResult.transcript === 'string' ? analysisResult.transcript : 'Transcript not available.')}
-                </pre>
+                {renderTranscript(analysisResult.transcript)}
             </div>
 
             <div style={{ textAlign: 'center', marginTop: '2.5rem' }}>
