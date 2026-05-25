@@ -304,6 +304,27 @@ describe('useLiveStream', () => {
     expect(result.current.finals).toEqual([{ text: 'finalized.', speaker: null }]);
   });
 
+  // Pins the `msg.speaker ?? null` boundary normalization: if a server frame
+  // ever lacks the `speaker` field entirely (TS lies, server regresses), the
+  // hook must still store `null` so downstream rendering doesn't choke on
+  // `undefined`.
+  it('normalizes a transcript frame with no speaker field to speaker=null', async () => {
+    const ws = new MockWebSocket('ws://test/api/stream');
+    const capture = makeMockCapture();
+    const { result } = renderHook(() => useLiveStream(opts(ws, capture)));
+
+    await act(async () => { await result.current.start(); });
+    act(() => ws.fireOpen());
+    act(() => ws.fireServerMessage({ type: 'session_started', session_id: 'x' }));
+    await waitFor(() => expect(result.current.status).toBe('recording'));
+
+    // Intentionally omit `speaker` — fireServerMessage JSON.stringifies, so
+    // the field is absent on the wire (not just undefined in JS).
+    act(() => ws.fireServerMessage({ type: 'transcript', text: 'no speaker.', is_final: true }));
+
+    expect(result.current.finals).toEqual([{ text: 'no speaker.', speaker: null }]);
+  });
+
   it('restarting from completed runs cleanup on the previous session first', async () => {
     const ws1 = new MockWebSocket('ws://test/api/stream');
     const capture1 = makeMockCapture();

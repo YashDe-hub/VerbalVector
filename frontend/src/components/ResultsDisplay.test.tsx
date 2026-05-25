@@ -101,6 +101,30 @@ describe('ResultsDisplay transcript rendering', () => {
     expect(screen.getByText('String transcript fallback.')).toBeInTheDocument();
   });
 
+  // Defensive: a malformed payload with utterances=[] but speakers=[0,1]
+  // should still render via the flat-text fallback (never blow up).
+  it('falls back to flat text when utterances is empty even if speakers reports multiple', () => {
+    const analysisResult = {
+      message: 'Upload complete.',
+      transcript: {
+        text: 'Some flat transcript.',
+        utterances: [],
+        speakers: [0, 1],
+      },
+      features: baseFeatures,
+      feedback: 'OK.',
+    };
+    render(
+      <ResultsDisplay
+        analysisResult={analysisResult}
+        onAnalyzeAnother={() => {}}
+        onNavigate={() => {}}
+      />,
+    );
+    expect(screen.getByText('Some flat transcript.')).toBeInTheDocument();
+    expect(screen.queryByText(/Speaker/)).not.toBeInTheDocument();
+  });
+
   it('renders null-speaker utterances without a label when mixed with real speakers', () => {
     const analysisResult = {
       message: 'Upload complete.',

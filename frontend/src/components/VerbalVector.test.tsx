@@ -263,6 +263,48 @@ describe('VerbalVector live mode', () => {
     expect(FakeWebSocket.instances[0].url).toContain('/api/stream');
   });
 
+  // End-to-end wiring check: ensures transcript messages flow from the
+  // useLiveStream hook into LiveTranscript with the speaker field intact.
+  // Catches regressions where the prop is renamed or the FinalSegment shape
+  // is unwired between hook and component.
+  it('renders speaker-labeled finals in LiveTranscript when multi-speaker transcripts arrive', async () => {
+    setupNavigatorMock([]);
+    (global as unknown as { WebSocket: unknown }).WebSocket = FakeWebSocket;
+
+    render(
+      <VerbalVector
+        onAnalysisComplete={() => {}}
+        onNavigate={() => {}}
+      />,
+    );
+
+    await userEvent.click(screen.getByLabelText(/live/i));
+    await userEvent.click(screen.getByRole('button', { name: /record audio/i }));
+
+    await waitFor(() => expect(FakeWebSocket.instances.length).toBe(1));
+    const ws = FakeWebSocket.instances[0];
+
+    if (ws.onopen) ws.onopen(new Event('open'));
+    if (ws.onmessage) {
+      ws.onmessage(new MessageEvent('message', {
+        data: JSON.stringify({ type: 'session_started', session_id: 'test' }),
+      }));
+      ws.onmessage(new MessageEvent('message', {
+        data: JSON.stringify({ type: 'transcript', text: 'Hello.', is_final: true, speaker: 0 }),
+      }));
+      ws.onmessage(new MessageEvent('message', {
+        data: JSON.stringify({ type: 'transcript', text: 'Hi there.', is_final: true, speaker: 1 }),
+      }));
+    }
+
+    await waitFor(() => {
+      expect(screen.getByText(/Speaker 0/)).toBeInTheDocument();
+      expect(screen.getByText(/Speaker 1/)).toBeInTheDocument();
+    });
+    expect(screen.getByText('Hello.')).toBeInTheDocument();
+    expect(screen.getByText('Hi there.')).toBeInTheDocument();
+  });
+
   it('enables the Stop Recording button once live status reaches recording', async () => {
     setupNavigatorMock([]);
     (global as unknown as { WebSocket: unknown }).WebSocket = FakeWebSocket;
