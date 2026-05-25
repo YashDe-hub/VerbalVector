@@ -8,11 +8,14 @@ describe('LiveTranscript', () => {
     expect(screen.getByText(/listening/i)).toBeInTheDocument();
   });
 
-  it('renders accumulated final transcripts as one block', () => {
+  it('renders accumulated final transcripts as one block when there is one speaker', () => {
     render(
       <LiveTranscript
         interim=""
-        finals={['Hello there.', 'How are you today?']}
+        finals={[
+          { text: 'Hello there.', speaker: 0 },
+          { text: 'How are you today?', speaker: 0 },
+        ]}
         status="recording"
       />,
     );
@@ -24,7 +27,7 @@ describe('LiveTranscript', () => {
     render(
       <LiveTranscript
         interim="I am"
-        finals={['Hello.']}
+        finals={[{ text: 'Hello.', speaker: 0 }]}
         status="recording"
       />,
     );
@@ -42,5 +45,86 @@ describe('LiveTranscript', () => {
     );
     expect(screen.queryByText(/listening/i)).not.toBeInTheDocument();
     expect(screen.getByText('I am')).toBeInTheDocument();
+  });
+
+  it('renders Speaker N: prefix when multiple speakers are detected', () => {
+    render(
+      <LiveTranscript
+        interim=""
+        finals={[
+          { text: 'Hello.', speaker: 0 },
+          { text: 'Hi.', speaker: 1 },
+        ]}
+        status="recording"
+      />,
+    );
+    expect(screen.getByText(/Speaker 0/)).toBeInTheDocument();
+    expect(screen.getByText(/Speaker 1/)).toBeInTheDocument();
+    expect(screen.getByText(/Hello\./)).toBeInTheDocument();
+    expect(screen.getByText(/Hi\./)).toBeInTheDocument();
+  });
+
+  it('does NOT render Speaker N: prefix when only one speaker is detected', () => {
+    render(
+      <LiveTranscript
+        interim=""
+        finals={[
+          { text: 'Hello.', speaker: 0 },
+          { text: 'How are you?', speaker: 0 },
+        ]}
+        status="recording"
+      />,
+    );
+    expect(screen.queryByText(/Speaker 0/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Hello\./)).toBeInTheDocument();
+  });
+
+  it('does NOT render labels when all speakers are null', () => {
+    render(
+      <LiveTranscript
+        interim=""
+        finals={[
+          { text: 'Hello.', speaker: null },
+          { text: 'World.', speaker: null },
+        ]}
+        status="recording"
+      />,
+    );
+    expect(screen.queryByText(/Speaker/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Hello\./)).toBeInTheDocument();
+  });
+
+  it('keeps interim in lighter color even in multi-speaker mode (no speaker tag on interim)', () => {
+    render(
+      <LiveTranscript
+        interim="continuing..."
+        finals={[
+          { text: 'Hello.', speaker: 0 },
+          { text: 'Hi.', speaker: 1 },
+        ]}
+        status="recording"
+      />,
+    );
+    const interimEl = screen.getByText('continuing...');
+    expect(interimEl).toHaveStyle({ color: '#94a3b8' });
+  });
+
+  it('renders null-speaker segments without a label when mixed with real speakers', () => {
+    render(
+      <LiveTranscript
+        interim=""
+        finals={[
+          { text: 'Hello.', speaker: 0 },
+          { text: 'untagged.', speaker: null },
+          { text: 'Hi.', speaker: 1 },
+        ]}
+        status="recording"
+      />,
+    );
+    expect(screen.getByText(/Speaker 0/)).toBeInTheDocument();
+    expect(screen.getByText(/Speaker 1/)).toBeInTheDocument();
+    // The null-speaker segment must NOT render "Speaker null:" literally
+    expect(screen.queryByText(/Speaker null/)).not.toBeInTheDocument();
+    expect(screen.getByText(/untagged\./)).toBeInTheDocument();
   });
 });

@@ -1,9 +1,9 @@
 import React from 'react';
-import type { LiveStreamStatus } from '../hooks/useLiveStream';
+import type { FinalSegment, LiveStreamStatus } from '../hooks/useLiveStream';
 
 interface LiveTranscriptProps {
   interim: string;
-  finals: string[];
+  finals: FinalSegment[];
   status: LiveStreamStatus;
 }
 
@@ -33,6 +33,13 @@ const interimStyle: React.CSSProperties = {
 export const LiveTranscript: React.FC<LiveTranscriptProps> = ({ interim, finals, status }) => {
   const hasAnyText = interim.length > 0 || finals.length > 0;
 
+  // Strip "Speaker N:" labels when 0 or 1 unique non-null speakers — keeps the
+  // single-speaker UI identical to today's pre-diarization rendering.
+  const uniqueSpeakers = new Set(
+    finals.map((f) => f.speaker).filter((s): s is number => s !== null),
+  );
+  const showSpeakers = uniqueSpeakers.size > 1;
+
   return (
     <div style={wrapperStyle} aria-live="polite" role="log">
       {!hasAnyText && (
@@ -40,7 +47,15 @@ export const LiveTranscript: React.FC<LiveTranscriptProps> = ({ interim, finals,
           {status === 'connecting' ? 'Connecting…' : 'Listening…'}
         </span>
       )}
-      {finals.length > 0 && <span>{finals.join(' ')} </span>}
+      {showSpeakers
+        ? finals.map((seg, i) => (
+            <div key={i} style={{ marginBottom: '0.5rem' }}>
+              {/* Null-speaker segments render unlabeled — avoids 'Speaker null:' display */}
+              {seg.speaker !== null && <strong>Speaker {seg.speaker}: </strong>}
+              <span>{seg.text}</span>
+            </div>
+          ))
+        : finals.length > 0 && <span>{finals.map((f) => f.text).join(' ')} </span>}
       {interim.length > 0 && <span style={interimStyle}>{interim}</span>}
     </div>
   );

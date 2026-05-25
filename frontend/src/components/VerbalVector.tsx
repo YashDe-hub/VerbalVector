@@ -420,12 +420,7 @@ const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete, onNavig
                   <span style={{ backgroundColor: '#ef4444', padding: '0.125rem 0.5rem', borderRadius: '9999px', color: 'white', fontSize: '0.75rem', fontWeight: 600, animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' }}>LIVE</span>
               </div>
               {mode === 'live' ? (
-                <LiveTranscript
-                  interim={live.interim}
-                  /* TEMP: .map(f => f.text) adapter — Task 2 removes when LiveTranscript consumes FinalSegment[] directly */
-                  finals={live.finals.map(f => f.text)}
-                  status={live.status}
-                />
+                <LiveTranscript interim={live.interim} finals={live.finals} status={live.status} />
               ) : (
                 <div style={{ height: '6rem', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: '2px', overflow: 'hidden' }}>
                     {waveformData.map((height, i) => (
