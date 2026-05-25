@@ -1,5 +1,7 @@
 # Phase 3d.2: Frontend Diarization Rendering Implementation Plan
 
+> **Revised after staff-engineer review.** Changes from initial draft: (1) multi-speaker render now handles `speaker === null` correctly — null-speaker segments render WITHOUT the "Speaker N:" label so they don't show "Speaker null:" literally when mixed with real speakers; (2) useLiveStream normalizes `msg.speaker ?? null` defensively at the boundary; (3) ResultsDisplay's conditional render is extracted to a `renderTranscript` helper instead of an IIFE inside JSX.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Render speaker labels in the live transcript pane and the batch results transcript. Strip labels when only one speaker was detected so single-speaker recordings look identical to today's UI.
@@ -189,16 +191,17 @@ And the state:
 const [finals, setFinals] = useState<FinalSegment[]>([]);
 ```
 
-2. Update the `handleServerMessage` transcript case to push the new shape:
+2. Update the `handleServerMessage` transcript case to push the new shape. Normalize `msg.speaker ?? null` defensively at the boundary so that if a server frame ever lacks the speaker field (test fixtures, stale backend during deploy, protocol drift), we get `null` not `undefined` — keeping the FinalSegment type honest at runtime:
 
 ```ts
 case 'transcript': {
+  const speaker = msg.speaker ?? null;
   if (msg.is_final) {
-    setFinals((prev) => [...prev, { text: msg.text, speaker: msg.speaker }]);
+    setFinals((prev) => [...prev, { text: msg.text, speaker }]);
     setInterim('');
   } else {
     setInterim(msg.text);
-    // Ignore msg.speaker for interim — we don't label interim text
+    // Ignore speaker for interim — we don't label interim text
   }
   break;
 }
@@ -353,6 +356,25 @@ it('keeps interim in lighter color even in multi-speaker mode (no speaker tag on
   const interimEl = screen.getByText('continuing...');
   expect(interimEl).toHaveStyle({ color: '#94a3b8' });
 });
+
+it('renders null-speaker segments without a label when mixed with real speakers', () => {
+  render(
+    <LiveTranscript
+      interim=""
+      finals={[
+        { text: 'Hello.', speaker: 0 },
+        { text: 'untagged.', speaker: null },
+        { text: 'Hi.', speaker: 1 },
+      ]}
+      status="recording"
+    />,
+  );
+  expect(screen.getByText(/Speaker 0/)).toBeInTheDocument();
+  expect(screen.getByText(/Speaker 1/)).toBeInTheDocument();
+  // The null-speaker segment must NOT render "Speaker null:" literally
+  expect(screen.queryByText(/Speaker null/)).not.toBeInTheDocument();
+  expect(screen.getByText(/untagged\./)).toBeInTheDocument();
+});
 ```
 
 ### Step 2.2: Run tests, confirm fail
@@ -399,7 +421,8 @@ export const LiveTranscript: React.FC<LiveTranscriptProps> = ({ interim, finals,
       {showSpeakers
         ? finals.map((seg, i) => (
             <div key={i} style={{ marginBottom: '0.5rem' }}>
-              <strong>Speaker {seg.speaker}: </strong>
+              {/* Null-speaker segments render unlabeled — avoids 'Speaker null:' display */}
+              {seg.speaker !== null && <strong>Speaker {seg.speaker}: </strong>}
               <span>{seg.text}</span>
             </div>
           ))
@@ -581,6 +604,35 @@ describe('ResultsDisplay transcript rendering', () => {
     );
     expect(screen.getByText('String transcript fallback.')).toBeInTheDocument();
   });
+
+  it('renders null-speaker utterances without a label when mixed with real speakers', () => {
+    const analysisResult = {
+      message: 'Upload complete.',
+      transcript: {
+        text: 'Hello. untagged. Hi.',
+        utterances: [
+          { speaker: 0, text: 'Hello.', start: 0.0, end: 0.5, confidence: 0.98 },
+          { speaker: null, text: 'untagged.', start: 0.6, end: 1.0, confidence: 0.95 },
+          { speaker: 1, text: 'Hi.', start: 1.1, end: 1.5, confidence: 0.97 },
+        ],
+        speakers: [0, 1],
+      },
+      features: baseFeatures,
+      feedback: 'OK.',
+    };
+    render(
+      <ResultsDisplay
+        analysisResult={analysisResult}
+        onAnalyzeAnother={() => {}}
+        onNavigate={() => {}}
+      />,
+    );
+    expect(screen.getByText(/Speaker 0/)).toBeInTheDocument();
+    expect(screen.getByText(/Speaker 1/)).toBeInTheDocument();
+    // The null-speaker utterance must NOT render "Speaker null:" literally
+    expect(screen.queryByText(/Speaker null/)).not.toBeInTheDocument();
+    expect(screen.getByText(/untagged\./)).toBeInTheDocument();
+  });
 });
 ```
 
@@ -594,44 +646,53 @@ Expected: 4 tests fail because the multi-speaker rendering doesn't exist yet.
 
 ### Step 3.3: Update ResultsDisplay.tsx
 
-Replace the existing Transcript Section JSX (lines ~211-219) with a conditional render:
+Extract a `renderTranscript` helper function (place it above the `ResultsDisplay` component, after the style constants):
+
+```tsx
+import type { UploadResponse } from '../api';
+
+function renderTranscript(transcript: UploadResponse['transcript']): React.ReactElement {
+  // Legacy string shape
+  if (typeof transcript === 'string') {
+    return <pre style={transcriptBoxStyle}>{transcript}</pre>;
+  }
+  if (!transcript) {
+    return <pre style={transcriptBoxStyle}>Transcript not available.</pre>;
+  }
+
+  const { utterances, speakers } = transcript;
+
+  // Multi-speaker: render speaker-labeled list
+  if (utterances && utterances.length > 0 && speakers && speakers.length > 1) {
+    return (
+      <div style={transcriptBoxStyle}>
+        {utterances.map((u, i) => (
+          <div key={i} style={{ marginBottom: '0.5rem' }}>
+            {/* Null-speaker utterances render unlabeled — avoids 'Speaker null:' display */}
+            {u.speaker !== null && <strong>Speaker {u.speaker}: </strong>}
+            <span>{u.text}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // Fall back to flat text (single speaker or no utterances)
+  return <pre style={transcriptBoxStyle}>{transcript.text || 'Transcript not available.'}</pre>;
+}
+```
+
+Then replace the existing Transcript Section JSX (lines ~211-219) with:
 
 ```tsx
 {/* --- Transcript Section --- */}
 <div style={sectionStyle}>
     <h3 style={sectionTitleStyle}>Transcript</h3>
-    {(() => {
-      const transcript = analysisResult.transcript;
-      // String-shape (legacy) — flat text
-      if (typeof transcript === 'string') {
-        return <pre style={transcriptBoxStyle}>{transcript}</pre>;
-      }
-      if (!transcript) {
-        return <pre style={transcriptBoxStyle}>Transcript not available.</pre>;
-      }
-
-      const utterances = transcript.utterances;
-      const speakers = transcript.speakers;
-
-      // Multi-speaker: render speaker-labeled list
-      if (utterances && utterances.length > 0 && speakers && speakers.length > 1) {
-        return (
-          <div style={transcriptBoxStyle}>
-            {utterances.map((u, i) => (
-              <div key={i} style={{ marginBottom: '0.5rem' }}>
-                <strong>Speaker {u.speaker}: </strong>
-                <span>{u.text}</span>
-              </div>
-            ))}
-          </div>
-        );
-      }
-
-      // Fall back to flat text (single speaker or no utterances)
-      return <pre style={transcriptBoxStyle}>{transcript.text || 'Transcript not available.'}</pre>;
-    })()}
+    {renderTranscript(analysisResult.transcript)}
 </div>
 ```
+
+The `UploadResponse` import from `../api` may already exist (it's used in the existing imports for `AnalysisResult`) — verify; if not, add it.
 
 ### Step 3.4: Run tests, confirm pass
 
