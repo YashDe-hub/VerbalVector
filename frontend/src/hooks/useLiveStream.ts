@@ -4,6 +4,11 @@ import { PcmAudioCapture } from '../audio/pcmAudioCapture';
 
 export type LiveStreamStatus = 'idle' | 'connecting' | 'recording' | 'stopping' | 'completed' | 'error';
 
+export interface FinalSegment {
+  text: string;
+  speaker: number | null;
+}
+
 export interface PcmAudioCaptureLike {
   start(options: { deviceId?: string }): Promise<void>;
   setHandler(handler: ((chunk: ArrayBuffer) => void) | null): void;
@@ -13,7 +18,7 @@ export interface PcmAudioCaptureLike {
 export interface UseLiveStreamReturn {
   status: LiveStreamStatus;
   interim: string;
-  finals: string[];
+  finals: FinalSegment[];
   error: string | null;
   result: UploadResponse | null;
   start: (sessionLabel?: string, deviceId?: string) => Promise<void>;
@@ -28,7 +33,7 @@ export interface UseLiveStreamOptions {
 export function useLiveStream(options: UseLiveStreamOptions = {}): UseLiveStreamReturn {
   const [status, setStatus] = useState<LiveStreamStatus>('idle');
   const [interim, setInterim] = useState<string>('');
-  const [finals, setFinals] = useState<string[]>([]);
+  const [finals, setFinals] = useState<FinalSegment[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<UploadResponse | null>(null);
 
@@ -79,11 +84,15 @@ export function useLiveStream(options: UseLiveStreamOptions = {}): UseLiveStream
         break;
       }
       case 'transcript': {
+        // Normalize undefined → null at the boundary so FinalSegment stays honest at runtime
+        // even if a server frame ever lacks the speaker field.
+        const speaker = msg.speaker ?? null;
         if (msg.is_final) {
-          setFinals((prev) => [...prev, msg.text]);
+          setFinals((prev) => [...prev, { text: msg.text, speaker }]);
           setInterim('');
         } else {
           setInterim(msg.text);
+          // Ignore speaker for interim — we don't label interim text in the UI
         }
         break;
       }

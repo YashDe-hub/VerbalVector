@@ -6,7 +6,15 @@ const client = axios.create({ baseURL: API_BASE });
 
 export interface UploadResponse {
   message: string;
-  transcript: { text: string; language?: string; segments?: any[] } | string;
+  transcript:
+    | {
+        text: string;
+        language?: string;
+        segments?: any[];
+        utterances?: { speaker: number | null; text: string; start: number; end: number; confidence: number }[];
+        speakers?: number[];
+      }
+    | string;
   features: Record<string, any>;
   feedback: string;
 }
@@ -67,7 +75,7 @@ export async function getSessions(): Promise<SessionsResponse> {
 
 export type ServerMessage =
   | { type: 'session_started'; session_id: string }
-  | { type: 'transcript'; text: string; is_final: boolean }
+  | { type: 'transcript'; text: string; is_final: boolean; speaker: number | null }
   | { type: 'session_end'; transcript: UploadResponse['transcript']; features: UploadResponse['features']; feedback: string }
   | { type: 'error'; message: string; fatal: boolean };
 

@@ -141,13 +141,13 @@ describe('useLiveStream', () => {
     act(() => ws.fireServerMessage({ type: 'session_started', session_id: 'x' }));
     await waitFor(() => expect(result.current.status).toBe('recording'));
 
-    act(() => ws.fireServerMessage({ type: 'transcript', text: 'hello', is_final: false }));
+    act(() => ws.fireServerMessage({ type: 'transcript', text: 'hello', is_final: false, speaker: 0 }));
     expect(result.current.interim).toBe('hello');
     expect(result.current.finals).toEqual([]);
 
-    act(() => ws.fireServerMessage({ type: 'transcript', text: 'hello world', is_final: true }));
+    act(() => ws.fireServerMessage({ type: 'transcript', text: 'hello world', is_final: true, speaker: 0 }));
     expect(result.current.interim).toBe('');
-    expect(result.current.finals).toEqual(['hello world']);
+    expect(result.current.finals).toEqual([{ text: 'hello world', speaker: 0 }]);
   });
 
   it('forwards captured PCM chunks as WebSocket binary frames', async () => {
@@ -264,6 +264,44 @@ describe('useLiveStream', () => {
 
     await waitFor(() => expect(result.current.status).toBe('error'));
     expect(result.current.error).toBeDefined();
+  });
+
+  it('accumulates finals with their speaker IDs in order', async () => {
+    const ws = new MockWebSocket('ws://test/api/stream');
+    const capture = makeMockCapture();
+    const { result } = renderHook(() => useLiveStream(opts(ws, capture)));
+
+    await act(async () => { await result.current.start(); });
+    act(() => ws.fireOpen());
+    act(() => ws.fireServerMessage({ type: 'session_started', session_id: 'x' }));
+    await waitFor(() => expect(result.current.status).toBe('recording'));
+
+    act(() => ws.fireServerMessage({ type: 'transcript', text: 'Hello.', is_final: true, speaker: 0 }));
+    act(() => ws.fireServerMessage({ type: 'transcript', text: 'Hi there.', is_final: true, speaker: 1 }));
+    act(() => ws.fireServerMessage({ type: 'transcript', text: 'How are you?', is_final: true, speaker: 0 }));
+
+    expect(result.current.finals).toEqual([
+      { text: 'Hello.', speaker: 0 },
+      { text: 'Hi there.', speaker: 1 },
+      { text: 'How are you?', speaker: 0 },
+    ]);
+  });
+
+  it('accepts transcript messages with speaker=null (interim from Deepgram)', async () => {
+    const ws = new MockWebSocket('ws://test/api/stream');
+    const capture = makeMockCapture();
+    const { result } = renderHook(() => useLiveStream(opts(ws, capture)));
+
+    await act(async () => { await result.current.start(); });
+    act(() => ws.fireOpen());
+    act(() => ws.fireServerMessage({ type: 'session_started', session_id: 'x' }));
+    await waitFor(() => expect(result.current.status).toBe('recording'));
+
+    act(() => ws.fireServerMessage({ type: 'transcript', text: 'partial...', is_final: false, speaker: null }));
+    expect(result.current.interim).toBe('partial...');
+
+    act(() => ws.fireServerMessage({ type: 'transcript', text: 'finalized.', is_final: true, speaker: null }));
+    expect(result.current.finals).toEqual([{ text: 'finalized.', speaker: null }]);
   });
 
   it('restarting from completed runs cleanup on the previous session first', async () => {
