@@ -82,3 +82,16 @@ export type ServerMessage =
 export function getStreamWsUrl(): string {
   return API_BASE.replace(/^http/, 'ws') + '/api/stream';
 }
+
+export type SessionResultPoll =
+  | { status: 'ready'; data: UploadResponse }
+  | { status: 'pending' };
+
+export async function getSessionResult(sessionId: string): Promise<SessionResultPoll> {
+  const res = await client.get<UploadResponse | { status: 'pending' }>(
+    `/api/sessions/${sessionId}/result`,
+    { validateStatus: (s) => s === 200 || s === 202 },
+  );
+  if (res.status === 202) return { status: 'pending' };
+  return { status: 'ready', data: res.data as UploadResponse };
+}
