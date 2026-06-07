@@ -100,8 +100,9 @@ export async function getSessionResult(sessionId: string): Promise<SessionResult
     const httpStatus = axios.isAxiosError(err) ? err.response?.status : undefined;
     const data = axios.isAxiosError(err) ? err.response?.data : undefined;
     const detail = data && typeof data === 'object' ? (data as { detail?: string }).detail : undefined;
-    // 400 (bad id) / 404 (route gone) can never recover → permanent.
-    // 5xx / network → transient; the caller counts the attempt and keeps polling.
-    return { status: 'failed', permanent: httpStatus === 400 || httpStatus === 404, detail };
+    // Any 4xx (bad id, auth, not-found, unprocessable) can never recover → permanent.
+    // 5xx / network / unknown → transient; the caller counts the attempt and keeps polling.
+    const permanent = typeof httpStatus === 'number' && httpStatus >= 400 && httpStatus < 500;
+    return { status: 'failed', permanent, detail };
   }
 }

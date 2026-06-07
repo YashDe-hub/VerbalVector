@@ -46,6 +46,17 @@ describe('getSessionResult', () => {
     });
   });
 
+  it('maps any 4xx (e.g. 403) to permanent:true', async () => {
+    mockGet.mockImplementationOnce(() =>
+      Promise.reject({ isAxiosError: true, response: { status: 403, data: { detail: 'Forbidden' } } }),
+    );
+    await expect(getSessionResult('f'.repeat(32))).resolves.toEqual({
+      status: 'failed',
+      permanent: true,
+      detail: 'Forbidden',
+    });
+  });
+
   it('maps a non-axios network error to {status:"failed", permanent:false}', async () => {
     mockGet.mockImplementationOnce(() => Promise.reject(new Error('Network Error')));
     await expect(getSessionResult('e'.repeat(32))).resolves.toEqual({
