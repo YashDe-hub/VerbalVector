@@ -5,7 +5,7 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5002";
 const client = axios.create({ baseURL: API_BASE });
 
 export interface UploadResponse {
-  message: string;
+  message?: string;
   transcript:
     | {
         text: string;
@@ -81,4 +81,28 @@ export type ServerMessage =
 
 export function getStreamWsUrl(): string {
   return API_BASE.replace(/^http/, 'ws') + '/api/stream';
+}
+
+export type SessionResultPoll =
+  | { status: 'ready'; data: UploadResponse }
+  | { status: 'pending' }
+  | { status: 'failed'; permanent: boolean; detail?: string };
+
+export async function getSessionResult(sessionId: string): Promise<SessionResultPoll> {
+  try {
+    const res = await client.get<UploadResponse | { status: 'pending' }>(
+      `/api/sessions/${sessionId}/result`,
+      { validateStatus: (s) => s === 200 || s === 202 },
+    );
+    if (res.status === 202) return { status: 'pending' };
+    return { status: 'ready', data: res.data as UploadResponse };
+  } catch (err) {
+    const httpStatus = axios.isAxiosError(err) ? err.response?.status : undefined;
+    const data = axios.isAxiosError(err) ? err.response?.data : undefined;
+    const detail = data && typeof data === 'object' ? (data as { detail?: string }).detail : undefined;
+    // Any 4xx (bad id, auth, not-found, unprocessable) can never recover → permanent.
+    // 5xx / network / unknown → transient; the caller counts the attempt and keeps polling.
+    const permanent = typeof httpStatus === 'number' && httpStatus >= 400 && httpStatus < 500;
+    return { status: 'failed', permanent, detail };
+  }
 }

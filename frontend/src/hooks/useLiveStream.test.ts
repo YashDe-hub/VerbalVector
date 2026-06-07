@@ -356,4 +356,31 @@ describe('useLiveStream', () => {
     expect(capture1.stopMock).toHaveBeenCalled();
     expect(capture2.startMock).toHaveBeenCalled();
   });
+
+  it('calls onSessionEnding with the server session id when stopped while recording', async () => {
+    const ws = new MockWebSocket('ws://test/api/stream');
+    const capture = makeMockCapture();
+    const onSessionEnding = vi.fn();
+    const { result } = renderHook(() => useLiveStream({ ...opts(ws, capture), onSessionEnding }));
+    await act(async () => { await result.current.start(); });
+    act(() => ws.fireOpen());
+    act(() => ws.fireServerMessage({ type: 'session_started', session_id: 'sess-123' }));
+    await waitFor(() => expect(result.current.status).toBe('recording'));
+    act(() => result.current.stop());
+    expect(onSessionEnding).toHaveBeenCalledWith('sess-123');
+  });
+
+  it('does NOT set error when the socket closes while stopping', async () => {
+    const ws = new MockWebSocket('ws://test/api/stream');
+    const capture = makeMockCapture();
+    const { result } = renderHook(() => useLiveStream(opts(ws, capture)));
+    await act(async () => { await result.current.start(); });
+    act(() => ws.fireOpen());
+    act(() => ws.fireServerMessage({ type: 'session_started', session_id: 'sess-123' }));
+    await waitFor(() => expect(result.current.status).toBe('recording'));
+    act(() => result.current.stop());            // status → 'stopping', socket still open
+    act(() => ws.close());                        // socket drops before session_end
+    expect(result.current.status).toBe('stopping');
+    expect(result.current.error).toBeNull();
+  });
 });
