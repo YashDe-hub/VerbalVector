@@ -66,19 +66,23 @@ function App() {
 
     const tick = async () => {
       attempts += 1;
-      try {
-        const res = await getSessionResult(sessionId);
-        if (cancelled) return;
-        if (res.status === "ready") {
-          setAnalysisData(res.data);
-          setPending({ sessionId, status: "ready" });
+      const res = await getSessionResult(sessionId);
+      if (cancelled) return;
+      if (res.status === "ready") {
+        setAnalysisData(res.data);
+        setPending({ sessionId, status: "ready" });
+        return;
+      }
+      if (res.status === "failed") {
+        console.warn(`[poll] session ${sessionId} attempt ${attempts} failed`, res.detail ?? "");
+        if (res.permanent) {
+          setPending({ sessionId, status: "error" });
           return;
         }
-      } catch {
-        // transport/5xx — counts as a failed attempt, keep polling
+        // transient — fall through, count the attempt, keep polling
       }
-      if (cancelled) return;
       if (attempts >= POLL_MAX_ATTEMPTS) {
+        console.error(`[poll] session ${sessionId} gave up after ${attempts} attempts`);
         setPending({ sessionId, status: "error" });
         return;
       }
@@ -117,7 +121,7 @@ function App() {
       )}
       {pending?.status === "error" && (
         <div style={{ ...bannerBase, background: "#fef2f2", color: "#b91c1c" }}>
-          <span>Analysis is taking longer than expected.</span>
+          <span>We couldn't retrieve your analysis — it may still be processing, or it may have failed.</span>
           <button onClick={() => { setPending(null); handleNavigate("history"); }}>
             Check History
           </button>

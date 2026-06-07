@@ -76,8 +76,28 @@ describe('App live poll fallback', () => {
     render(<App />);
     await click(screen.getByText('fire-ending'));
     await tick(45 * 2000);
-    expect(screen.getByText(/taking longer than expected/i)).toBeInTheDocument();
+    expect(screen.getByText(/couldn't retrieve your analysis/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /check history/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
+  });
+
+  it('surfaces the error banner immediately on a permanent failure (no full-cap wait)', async () => {
+    mockGetSessionResult.mockResolvedValue({ status: 'failed', permanent: true, detail: 'Invalid session id.' });
+    render(<App />);
+    await click(screen.getByText('fire-ending'));
+    await tick(2000); // a single poll is enough — permanent failures fail fast
+    expect(screen.getByText(/couldn't retrieve your analysis/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
+  });
+
+  it('keeps polling through a transient failure then shows results', async () => {
+    mockGetSessionResult
+      .mockResolvedValueOnce({ status: 'failed', permanent: false, detail: 'boom' })
+      .mockResolvedValueOnce({ status: 'ready', data: READY });
+    render(<App />);
+    await click(screen.getByText('fire-ending'));
+    await tick(2000); // transient failure — keeps polling
+    await tick(2000); // ready
+    expect(screen.getByText('RESULTS_VIEW')).toBeInTheDocument();
   });
 });

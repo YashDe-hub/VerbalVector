@@ -85,13 +85,23 @@ export function getStreamWsUrl(): string {
 
 export type SessionResultPoll =
   | { status: 'ready'; data: UploadResponse }
-  | { status: 'pending' };
+  | { status: 'pending' }
+  | { status: 'failed'; permanent: boolean; detail?: string };
 
 export async function getSessionResult(sessionId: string): Promise<SessionResultPoll> {
-  const res = await client.get<UploadResponse | { status: 'pending' }>(
-    `/api/sessions/${sessionId}/result`,
-    { validateStatus: (s) => s === 200 || s === 202 },
-  );
-  if (res.status === 202) return { status: 'pending' };
-  return { status: 'ready', data: res.data as UploadResponse };
+  try {
+    const res = await client.get<UploadResponse | { status: 'pending' }>(
+      `/api/sessions/${sessionId}/result`,
+      { validateStatus: (s) => s === 200 || s === 202 },
+    );
+    if (res.status === 202) return { status: 'pending' };
+    return { status: 'ready', data: res.data as UploadResponse };
+  } catch (err) {
+    const httpStatus = axios.isAxiosError(err) ? err.response?.status : undefined;
+    const data = axios.isAxiosError(err) ? err.response?.data : undefined;
+    const detail = data && typeof data === 'object' ? (data as { detail?: string }).detail : undefined;
+    // 400 (bad id) / 404 (route gone) can never recover → permanent.
+    // 5xx / network → transient; the caller counts the attempt and keeps polling.
+    return { status: 'failed', permanent: httpStatus === 400 || httpStatus === 404, detail };
+  }
 }

@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const { mockGet } = vi.hoisted(() => ({ mockGet: vi.fn() }));
 vi.mock('axios', () => ({
-  default: { create: () => ({ get: mockGet, post: vi.fn() }) },
+  default: {
+    create: () => ({ get: mockGet, post: vi.fn() }),
+    isAxiosError: (e: unknown) => Boolean((e as { isAxiosError?: boolean })?.isAxiosError),
+  },
 }));
 
 import { getSessionResult } from './api';
@@ -21,8 +24,34 @@ describe('getSessionResult', () => {
     await expect(getSessionResult('b'.repeat(32))).resolves.toEqual({ status: 'pending' });
   });
 
-  it('throws on transport error (treated as a failed attempt by caller)', async () => {
+  it('maps a transient (5xx) error to {status:"failed", permanent:false} with detail', async () => {
+    mockGet.mockImplementationOnce(() =>
+      Promise.reject({ isAxiosError: true, response: { status: 500, data: { detail: 'boom' } } }),
+    );
+    await expect(getSessionResult('c'.repeat(32))).resolves.toEqual({
+      status: 'failed',
+      permanent: false,
+      detail: 'boom',
+    });
+  });
+
+  it('maps a 400 to {status:"failed", permanent:true} (never recovers)', async () => {
+    mockGet.mockImplementationOnce(() =>
+      Promise.reject({ isAxiosError: true, response: { status: 400, data: { detail: 'Invalid session id.' } } }),
+    );
+    await expect(getSessionResult('d'.repeat(32))).resolves.toEqual({
+      status: 'failed',
+      permanent: true,
+      detail: 'Invalid session id.',
+    });
+  });
+
+  it('maps a non-axios network error to {status:"failed", permanent:false}', async () => {
     mockGet.mockImplementationOnce(() => Promise.reject(new Error('Network Error')));
-    await expect(getSessionResult('c'.repeat(32))).rejects.toThrow('Network Error');
+    await expect(getSessionResult('e'.repeat(32))).resolves.toEqual({
+      status: 'failed',
+      permanent: false,
+      detail: undefined,
+    });
   });
 });
