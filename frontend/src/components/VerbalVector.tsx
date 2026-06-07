@@ -14,6 +14,7 @@ export type AnalysisResult = UploadResponse;
 interface VerbalVectorProps {
   onAnalysisComplete: (result: AnalysisResult) => void;
   onNavigate: (view: NavView) => void;
+  onLiveSessionEnding?: (sessionId: string) => void;
 }
 
 const mainStyle: React.CSSProperties = {
@@ -38,7 +39,7 @@ const footerStyle: React.CSSProperties = {
     marginTop: '3rem', // mt-12
 };
 
-const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete, onNavigate }) => {
+const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete, onNavigate, onLiveSessionEnding }) => {
   const [stage, setStage] = useState<'input' | 'recording' | 'processing'>('input');
   const [isRecording, setIsRecording] = useState(false);
   const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -57,7 +58,7 @@ const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete, onNavig
   } = useAudioDevices();
   const [helpOpen, setHelpOpen] = useState(false);
   const [mode, setMode] = useState<'batch' | 'live'>('batch');
-  const live = useLiveStream();
+  const live = useLiveStream({ onSessionEnding: onLiveSessionEnding });
 
   // True when audio is actively being captured, regardless of mode.
   // Used to drive the Stop Recording button state so live mode isn't stuck disabled.

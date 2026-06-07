@@ -336,4 +336,30 @@ describe('VerbalVector live mode', () => {
       expect(stopBtn).not.toBeDisabled();
     });
   });
+
+  it('forwards onLiveSessionEnding with the session id when live recording stops', async () => {
+    setupNavigatorMock([]);
+    (global as unknown as { WebSocket: unknown }).WebSocket = FakeWebSocket;
+    const onLiveSessionEnding = vi.fn();
+    render(
+      <VerbalVector
+        onAnalysisComplete={() => {}}
+        onNavigate={() => {}}
+        onLiveSessionEnding={onLiveSessionEnding}
+      />,
+    );
+    await userEvent.click(screen.getByLabelText(/live/i));
+    await userEvent.click(screen.getByRole('button', { name: /record audio/i }));
+    await waitFor(() => expect(FakeWebSocket.instances.length).toBe(1));
+    const ws = FakeWebSocket.instances[0];
+    if (ws.onopen) ws.onopen(new Event('open'));
+    if (ws.onmessage) {
+      ws.onmessage(new MessageEvent('message', {
+        data: JSON.stringify({ type: 'session_started', session_id: 'live-xyz' }),
+      }));
+    }
+    await waitFor(() => expect(screen.getByRole('button', { name: /stop recording/i })).not.toBeDisabled());
+    await userEvent.click(screen.getByRole('button', { name: /stop recording/i }));
+    expect(onLiveSessionEnding).toHaveBeenCalledWith('live-xyz');
+  });
 });
