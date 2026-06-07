@@ -111,7 +111,7 @@ const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete, onNavig
 
       processFile();
 
-    } else if (stage === 'processing' && !audioFile) {
+    } else if (stage === 'processing' && !audioFile && mode === 'batch') {
         // Handle case where processing started from recording without generating a file yet
         // This part needs the actual recording logic implemented
         console.warn("Entered processing stage without an audio file (likely from recording). Implement recording save first.");
@@ -119,7 +119,7 @@ const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete, onNavig
         setStage('input'); // Go back for now
     }
 
-  }, [stage, audioFile, onAnalysisComplete, sessionLabel]);
+  }, [stage, audioFile, onAnalysisComplete, sessionLabel, mode]);
 
   useEffect(() => {
     if (live.status === 'completed' && live.result) {
