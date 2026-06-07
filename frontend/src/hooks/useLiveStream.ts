@@ -28,6 +28,7 @@ export interface UseLiveStreamReturn {
 export interface UseLiveStreamOptions {
   createWebSocket?: (url: string) => WebSocket;
   createCapture?: () => PcmAudioCaptureLike;
+  onSessionEnding?: (sessionId: string) => void;
 }
 
 export function useLiveStream(options: UseLiveStreamOptions = {}): UseLiveStreamReturn {
@@ -40,6 +41,7 @@ export function useLiveStream(options: UseLiveStreamOptions = {}): UseLiveStream
   const wsRef = useRef<WebSocket | null>(null);
   const captureRef = useRef<PcmAudioCaptureLike | null>(null);
   const pendingLabelRef = useRef<string>('');
+  const sessionIdRef = useRef<string>('');
   // Status ref so ws.onclose (which fires outside React's render cycle) can
   // make a decision based on current status without triggering side effects
   // from inside a setState updater.
@@ -63,6 +65,7 @@ export function useLiveStream(options: UseLiveStreamOptions = {}): UseLiveStream
   const handleServerMessage = useCallback(async (msg: ServerMessage) => {
     switch (msg.type) {
       case 'session_started': {
+        sessionIdRef.current = msg.session_id;
         const initPayload = JSON.stringify({ type: 'init', session_label: pendingLabelRef.current });
         wsRef.current?.send(initPayload);
         const capture = captureRef.current;
@@ -172,7 +175,7 @@ export function useLiveStream(options: UseLiveStreamOptions = {}): UseLiveStream
     };
     ws.onclose = () => {
       const cur = statusRef.current;
-      if (cur !== 'completed' && cur !== 'error' && cur !== 'idle') {
+      if (cur !== 'completed' && cur !== 'error' && cur !== 'idle' && cur !== 'stopping') {
         setError('Connection closed unexpectedly.');
         setStatus('error');
       }
@@ -205,7 +208,10 @@ export function useLiveStream(options: UseLiveStreamOptions = {}): UseLiveStream
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'end' }));
     }
-  }, [cleanup]);
+    if (sessionIdRef.current) {
+      options.onSessionEnding?.(sessionIdRef.current);
+    }
+  }, [cleanup, options.onSessionEnding]);
 
   useEffect(() => {
     return () => {
