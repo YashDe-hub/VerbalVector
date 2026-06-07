@@ -2,11 +2,14 @@ import asyncio
 import json
 import logging
 import os
+import re
 import uuid
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 import config  # loads .env and exposes API keys / paths
@@ -59,6 +62,34 @@ def read_file(file_path: str | None, parser=None):
     except Exception as e:
         logger.error("Error reading result file (id=%s): %s", os.path.basename(file_path), e)
         return None
+
+
+SESSION_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+
+
+def result_file_paths(session_id: str) -> tuple[str, str, str]:
+    """The three analysis-output paths for a session, by naming convention.
+
+    Files are named from the audio stem; for live sessions the WAV is
+    {session_id}.wav, so the stem equals session_id (see api.py stream handler).
+    """
+    base = os.path.join(ANALYSIS_OUTPUT_FOLDER, session_id)
+    return (f"{base}_transcript.json", f"{base}_features.json", f"{base}_feedback.txt")
+
+
+def read_analysis_results(
+    transcript_path: str | None,
+    features_path: str | None,
+    feedback_path: str | None,
+) -> dict | None:
+    """Read + parse the three result files. Returns the API payload or None
+    if any file is missing/unreadable."""
+    transcript = read_file(transcript_path, json.loads)
+    features = read_file(features_path, json.loads)
+    feedback = read_file(feedback_path)
+    if transcript is None or features is None or feedback is None:
+        return None
+    return {"transcript": transcript, "features": features, "feedback": feedback}
 
 
 @app.get("/")
@@ -114,36 +145,20 @@ async def upload_file(
             logger.error("Analysis pipeline returned None (id=%s)", safe_name[:8])
             raise HTTPException(status_code=500, detail="Analysis failed. Check backend logs.")
 
-        transcript_path = analysis_results.get("transcript_path")
-        features_path = analysis_results.get("features_path")
-        feedback_path = analysis_results.get("feedback_path")
-
-        transcript_content = read_file(transcript_path, json.loads)
-        features_content = read_file(features_path, json.loads)
-        feedback_content = read_file(feedback_path)
-
-        failed = [
-            p for p, c in [
-                (transcript_path, transcript_content),
-                (features_path, features_content),
-                (feedback_path, feedback_content),
-            ]
-            if c is None
-        ]
-        if failed:
-            logger.error("Failed to read result files (id=%s): %d files", safe_name[:8], len(failed))
+        results = read_analysis_results(
+            analysis_results.get("transcript_path"),
+            analysis_results.get("features_path"),
+            analysis_results.get("feedback_path"),
+        )
+        if results is None:
+            logger.error("Failed to read result files (id=%s)", safe_name[:8])
             raise HTTPException(
                 status_code=500,
                 detail="Analysis completed but failed to read result files.",
             )
 
         logger.info("Analysis complete (id=%s)", safe_name[:8])
-        return {
-            "message": f"File '{file.filename}' processed successfully.",
-            "transcript": transcript_content,
-            "features": features_content,
-            "feedback": feedback_content,
-        }
+        return {"message": f"File '{file.filename}' processed successfully.", **results}
 
     except HTTPException:
         raise
@@ -364,24 +379,18 @@ async def stream_audio(websocket: WebSocket) -> None:
             )
             return
 
-        transcript_content = read_file(analysis_results.get("transcript_path"), json.loads)
-        features_content = read_file(analysis_results.get("features_path"), json.loads)
-        feedback_content = read_file(analysis_results.get("feedback_path"))
-
-        if transcript_content is None or features_content is None or feedback_content is None:
+        results = read_analysis_results(
+            analysis_results.get("transcript_path"),
+            analysis_results.get("features_path"),
+            analysis_results.get("feedback_path"),
+        )
+        if results is None:
             await websocket.send_json(
                 {"type": "error", "message": "Analysis completed but result files unreadable.", "fatal": True}
             )
             return
 
-        await websocket.send_json(
-            {
-                "type": "session_end",
-                "transcript": transcript_content,
-                "features": features_content,
-                "feedback": feedback_content,
-            }
-        )
+        await websocket.send_json({"type": "session_end", **results})
 
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected (id=%s)", short_id)
