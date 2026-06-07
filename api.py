@@ -208,6 +208,29 @@ async def get_sessions():
     return {"sessions": sessions}
 
 
+@app.get("/api/sessions/{session_id}/result")
+async def get_session_result(session_id: str):
+    """Fetch the completed analysis for a live session by id.
+
+    Durable fallback for live streaming: the result files are written even if
+    the WebSocket closed before delivery. Returns 202 while still pending so the
+    frontend can poll. The existence check avoids read_file's not-found ERROR
+    logging on every poll during the normal pending window.
+    """
+    if not SESSION_ID_RE.match(session_id):
+        raise HTTPException(status_code=400, detail="Invalid session id.")
+
+    transcript_path, features_path, feedback_path = result_file_paths(session_id)
+
+    if not all(Path(p).exists() for p in (transcript_path, features_path, feedback_path)):
+        return JSONResponse(status_code=202, content={"status": "pending"})
+
+    results = read_analysis_results(transcript_path, features_path, feedback_path)
+    if results is None:
+        raise HTTPException(status_code=500, detail="Result files present but unreadable.")
+    return results
+
+
 @app.websocket("/api/stream")
 async def stream_audio(websocket: WebSocket) -> None:
     """
