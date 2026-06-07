@@ -5,13 +5,17 @@ const mockGetSessionResult = vi.fn();
 vi.mock('./api', () => ({ getSessionResult: (id: string) => mockGetSessionResult(id) }));
 
 vi.mock('./components/VerbalVector', () => ({
-  default: ({ onLiveSessionEnding, onNavigate }: {
+  default: ({ onLiveSessionEnding, onNavigate, onAnalysisComplete }: {
     onLiveSessionEnding?: (id: string) => void;
     onNavigate: (v: string) => void;
+    onAnalysisComplete?: (r: unknown) => void;
   }) => (
     <div>
       <button onClick={() => onLiveSessionEnding?.('sess-1')}>fire-ending</button>
       <button onClick={() => onNavigate('query')}>go-query</button>
+      <button onClick={() => onAnalysisComplete?.({ message: 'x', transcript: { text: 'fast' }, features: {}, feedback: 'fp' })}>
+        fire-complete
+      </button>
     </div>
   ),
 }));
@@ -88,6 +92,16 @@ describe('App live poll fallback', () => {
     await tick(2000); // a single poll is enough — permanent failures fail fast
     expect(screen.getByText(/couldn't retrieve your analysis/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
+  });
+
+  it('fast-path completion cancels the durable poll (no stale double-delivery)', async () => {
+    mockGetSessionResult.mockResolvedValue({ status: 'ready', data: READY });
+    render(<App />);
+    await click(screen.getByText('fire-ending'));   // arms the poll (first tick at +2000ms)
+    await click(screen.getByText('fire-complete'));  // WS fast path delivers before the first tick
+    expect(screen.getByText('RESULTS_VIEW')).toBeInTheDocument();
+    await tick(6000);                                 // advance well past the poll interval
+    expect(mockGetSessionResult).not.toHaveBeenCalled(); // poll was cancelled by setPending(null)
   });
 
   it('keeps polling through a transient failure then shows results', async () => {
