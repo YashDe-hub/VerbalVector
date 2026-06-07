@@ -5,7 +5,7 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5002";
 const client = axios.create({ baseURL: API_BASE });
 
 export interface UploadResponse {
-  message: string;
+  message?: string;
   transcript:
     | {
         text: string;
