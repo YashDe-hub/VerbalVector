@@ -23,6 +23,9 @@ DEEPGRAM_STT_MODEL: str = os.environ.get("DEEPGRAM_STT_MODEL", "nova-3")
 DEEPGRAM_STT_SAMPLE_RATE: int = int(os.environ.get("DEEPGRAM_STT_SAMPLE_RATE", "16000"))
 GEMINI_LLM_MODEL: str = os.environ.get("GEMINI_LLM_MODEL", "gemini-2.5-flash")
 EMBEDDING_MODEL: str = os.environ.get("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+SPEAKER_EMBED_MODEL: str = os.environ.get("SPEAKER_EMBED_MODEL", "speechbrain/spkrec-ecapa-voxceleb")
+SPEAKER_MATCH_THRESHOLD: float = float(os.environ.get("SPEAKER_MATCH_THRESHOLD", "0.30"))
+ENROLL_MIN_SECONDS: float = float(os.environ.get("ENROLL_MIN_SECONDS", "10"))
 MAX_FILE_SIZE_BYTES: int = int(os.environ.get("MAX_FILE_SIZE_BYTES", 50 * 1024 * 1024))
 
 # ── Server Settings ─────────────────────────────────────────────────────────
@@ -37,12 +40,15 @@ UPLOAD_DIR = ROOT_DIR / "data" / "uploads"
 OUTPUT_DIR = ROOT_DIR / "analysis_output"
 VECTOR_DB_DIR = ROOT_DIR / "vector_db"
 STREAM_AUDIO_DIR = ROOT_DIR / "data" / "streams"
+VOICE_PROFILE_DIR = ROOT_DIR / "data" / "voice_profile"
+SPEAKER_MODEL_CACHE_DIR = ROOT_DIR / "data" / "speaker_model"
 
 # Ensure runtime directories exist
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 VECTOR_DB_DIR.mkdir(parents=True, exist_ok=True)
 STREAM_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+VOICE_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def validate():
