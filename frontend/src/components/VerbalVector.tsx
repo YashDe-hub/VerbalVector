@@ -7,6 +7,7 @@ import { useAudioDevices } from '../hooks/useAudioDevices';
 import { AudioDeviceSelector } from './AudioDeviceSelector';
 import { useLiveStream } from '../hooks/useLiveStream';
 import { LiveTranscript } from './LiveTranscript';
+import { EnrollmentPanel } from './EnrollmentPanel';
 
 export type AnalysisResult = UploadResponse;
 
@@ -391,6 +392,7 @@ const VerbalVector: React.FC<VerbalVectorProps> = ({ onAnalysisComplete, onNavig
                 </div>
               )}
             </div>
+            <EnrollmentPanel />
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1.5rem', width: '100%', marginBottom: '3rem' }}>
               <button
                 onClick={mode === 'live' ? startLiveRecording : startRecording}

@@ -13,6 +13,7 @@ export interface UploadResponse {
         segments?: any[];
         utterances?: { speaker: number | null; text: string; start: number; end: number; confidence: number }[];
         speakers?: number[];
+        speaker_attribution?: SpeakerAttribution;
       }
     | string;
   features: Record<string, any>;
@@ -105,4 +106,32 @@ export async function getSessionResult(sessionId: string): Promise<SessionResult
     const permanent = typeof httpStatus === 'number' && httpStatus >= 400 && httpStatus < 500;
     return { status: 'failed', permanent, detail };
   }
+}
+
+export type SpeakerAttribution =
+  | { enabled: true; user_speaker: number; confidence: number; low_confidence: boolean }
+  | { enabled: false; reason: 'no_profile' | 'match_failed' };
+
+export interface EnrollmentStatus {
+  created_at: string;
+  duration_seconds: number;
+  model: string;
+}
+
+export async function getEnrollment(): Promise<EnrollmentStatus | null> {
+  const res = await client.get<EnrollmentStatus>('/api/enroll', {
+    validateStatus: (s) => s === 200 || s === 404,
+  });
+  return res.status === 404 ? null : res.data;
+}
+
+export async function enrollVoice(audio: Blob, filename = 'enroll.webm'): Promise<EnrollmentStatus> {
+  const formData = new FormData();
+  formData.append('file', audio, filename);
+  const res = await client.post<EnrollmentStatus>('/api/enroll', formData);
+  return res.data;
+}
+
+export async function deleteEnrollment(): Promise<void> {
+  await client.delete('/api/enroll', { validateStatus: (s) => s === 204 || s === 404 });
 }
