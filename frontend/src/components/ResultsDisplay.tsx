@@ -168,17 +168,17 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ analysisResult, onAnaly
             </h2>
 
             {attribution?.enabled && !attribution.low_confidence && (
-                <p style={{ textAlign: 'center', color: '#4338ca', marginTop: '-1.5rem', marginBottom: '2rem', fontSize: '0.875rem' }}>
+                <p role="status" style={{ textAlign: 'center', color: '#4338ca', marginTop: '-1.5rem', marginBottom: '2rem', fontSize: '0.875rem' }}>
                     This analysis is about you (your enrolled voice was matched in this recording).
                 </p>
             )}
             {attribution?.enabled && attribution.low_confidence && (
-                <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '2rem', fontSize: '0.875rem', textAlign: 'center' }}>
+                <div role="status" style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '2rem', fontSize: '0.875rem', textAlign: 'center' }}>
                     ⚠ We weren't sure which speaker was you — this analysis is our best guess. Verify the "You" labels in the transcript below.
                 </div>
             )}
             {attribution && !attribution.enabled && attribution.reason === 'match_failed' && (
-                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', color: '#475569', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '2rem', fontSize: '0.875rem', textAlign: 'center' }}>
+                <div role="status" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', color: '#475569', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '2rem', fontSize: '0.875rem', textAlign: 'center' }}>
                     We couldn't identify you in this recording — showing a generic whole-recording analysis instead.
                 </div>
             )}
