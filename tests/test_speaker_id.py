@@ -2,7 +2,7 @@
 import json
 import numpy as np
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from src.services import speaker_id
 
@@ -96,4 +96,46 @@ def test_match_user_caps_segment_seconds():
     with patch.object(speaker_id, "_embed_speaker", side_effect=fake_embed):
         speaker_id.match_user("x.wav", utts, _norm([1.0, 0.0]))
     total = sum(e - s for s, e in captured[0])
-    assert total <= speaker_id.MAX_MATCH_SECONDS + 0.01
+    assert total == pytest.approx(speaker_id.MAX_MATCH_SECONDS)
+
+
+# ---------------- embedding path ----------------
+
+def test_compute_embedding_too_little_audio_returns_none():
+    # less than _MIN_EMBED_SECONDS (0.5s * 16000 = 8000 samples) → None
+    with patch.object(speaker_id, "_load_audio", return_value=np.zeros(100, dtype=np.float32)):
+        assert speaker_id.compute_embedding("x.wav") is None
+
+
+def test_compute_embedding_zero_norm_returns_none():
+    import torch
+    fake_clf = MagicMock()
+    fake_clf.encode_batch.return_value = torch.zeros(1, 1, 8)
+    with (
+        patch.object(speaker_id, "_load_audio", return_value=np.ones(16000, dtype=np.float32)),
+        patch.object(speaker_id, "_get_classifier", return_value=fake_clf),
+    ):
+        assert speaker_id.compute_embedding("x.wav") is None
+
+
+def test_compute_embedding_returns_l2_normalized_vector():
+    import torch
+    fake_clf = MagicMock()
+    fake_clf.encode_batch.return_value = torch.tensor([[[3.0, 4.0]]])  # raw norm = 5
+    with (
+        patch.object(speaker_id, "_load_audio", return_value=np.ones(16000, dtype=np.float32)),
+        patch.object(speaker_id, "_get_classifier", return_value=fake_clf),
+    ):
+        emb = speaker_id.compute_embedding("x.wav")
+    assert emb is not None
+    assert np.isclose(np.linalg.norm(emb), 1.0)
+
+
+def test_compute_embedding_returns_none_on_failure():
+    with patch.object(speaker_id, "_load_audio", side_effect=RuntimeError("boom")):
+        assert speaker_id.compute_embedding("x.wav") is None
+
+
+def test_export_segments_wav_none_when_no_audio():
+    with patch.object(speaker_id, "_load_audio", return_value=None):
+        assert speaker_id.export_segments_wav("x.wav", [(0.0, 1.0)], "out.wav") is None

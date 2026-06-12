@@ -34,14 +34,14 @@ pytest>=7.0.0
 httpx>=0.27.0
 pytest-asyncio>=0.23.0
 
-speechbrain
+speechbrain>=1.0.0
+soundfile>=0.12.0            # used by speaker_id.export_segments_wav (also a librosa dep)
 
 # ── Removed ───────────────────────────────────────────────────────────────────
 # ollama          — replaced by Gemini via google-generativeai
 # openai-whisper  — replaced by Deepgram via deepgram-sdk
 # bitsandbytes    — quantization only needed for local model training
 # sounddevice     — only used by main.py live-recording (deleted)
-# soundfile       — only used by main.py live-recording (deleted)
 # torch           — only used by create_finetune_data.py (deleted)
 # transformers    — only used by create_finetune_data.py (deleted)
 # datasets        — only used by create_finetune_data.py (deleted)
