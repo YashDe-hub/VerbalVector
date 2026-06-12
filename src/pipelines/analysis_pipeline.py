@@ -19,7 +19,7 @@ from src.features.text_features import TextFeatureExtractor
 from src.features.feature_combiner import FeatureCombiner
 
 # External API services
-from src.services import stt, emotion, llm
+from src.services import stt, emotion, llm, speaker_id
 
 # Vector store
 from src.vector_store.manager import initialize_vector_store, store_transcript
@@ -37,6 +37,7 @@ def _perform_analysis(
     utterances: list[dict] | None,
     output_dir_path: Path,
     results_dict: dict,
+    user_speaker: int | None = None,
 ) -> None:
     """
     Runs in a background thread:
@@ -55,12 +56,33 @@ def _perform_analysis(
         features_out = output_dir_path / f"{base_name}_features.json"
         feedback_out = output_dir_path / f"{base_name}_feedback.txt"
 
+        # Wearer-focused mode: compute features on the user's speech only.
+        # The LLM still receives the FULL audio + transcript as context.
+        features_audio_path = audio_path_str
+        features_text = transcript_text
+        if user_speaker is not None and utterances:
+            user_utts = [u for u in utterances if u.get("speaker") == user_speaker]
+            if user_utts:
+                features_text = " ".join(u["text"] for u in user_utts)
+                user_wav = speaker_id.export_segments_wav(
+                    audio_path_str,
+                    [(u["start"], u["end"]) for u in user_utts],
+                    str(output_dir_path / f"{base_name}_user.wav"),
+                )
+                if user_wav:
+                    features_audio_path = user_wav
+                else:
+                    logger.warning(
+                        "[Thread Analysis] User-only WAV export failed — "
+                        "audio features fall back to the full recording."
+                    )
+
         # 1. Feature extraction (Librosa + NLTK)
         try:
             combiner = FeatureCombiner()
             combined_features = combiner.combine_features(
-                audio_path=audio_path_str,
-                transcript_text=transcript_text,
+                audio_path=features_audio_path,
+                transcript_text=features_text,
             )
             if not combined_features:
                 logger.error("[Thread Analysis] FeatureCombiner returned empty dict.")
@@ -101,6 +123,7 @@ def _perform_analysis(
             features=combined_features,
             emotion_scores=emotion_scores,
             utterances=utterances,
+            user_speaker=user_speaker,
         )
 
         if feedback_text:
@@ -200,6 +223,28 @@ def run_analysis_pipeline(
     transcript_text = stt_result["text"]
     utterances = stt_result.get("utterances")  # may be None or []
 
+    # Wearer-focused attribution (optional, non-fatal): which speaker is the user?
+    user_speaker: Optional[int] = None
+    attribution: Dict[str, Any] = {"enabled": False, "reason": "no_profile"}
+    profile = speaker_id.load_profile()
+    if profile is not None:
+        match = None
+        try:
+            match = speaker_id.match_user(audio_path, utterances or [], profile)
+        except Exception as e:
+            logger.warning(f"[SpeakerID] match_user raised (non-fatal): {e}")
+        if match:
+            attribution = {"enabled": True, **match}
+            user_speaker = match["user_speaker"]
+            logger.info(
+                f"[SpeakerID] User is Speaker {user_speaker} "
+                f"(confidence {match['confidence']}, low_confidence={match['low_confidence']})."
+            )
+        else:
+            attribution = {"enabled": False, "reason": "match_failed"}
+            logger.warning("[SpeakerID] Could not identify the user — generic analysis.")
+    stt_result["speaker_attribution"] = attribution
+
     # Save transcript JSON
     transcript_path = output_dir_path / f"{base_name}_transcript.json"
     try:
@@ -216,7 +261,7 @@ def run_analysis_pipeline(
 
     analysis_thread = threading.Thread(
         target=_perform_analysis,
-        args=(audio_path, transcript_text, utterances, output_dir_path, analysis_results),
+        args=(audio_path, transcript_text, utterances, output_dir_path, analysis_results, user_speaker),
         daemon=True,
     )
     effective_source_id = source_id or base_name
