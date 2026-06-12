@@ -139,3 +139,18 @@ def test_compute_embedding_returns_none_on_failure():
 def test_export_segments_wav_none_when_no_audio():
     with patch.object(speaker_id, "_load_audio", return_value=None):
         assert speaker_id.export_segments_wav("x.wav", [(0.0, 1.0)], "out.wav") is None
+
+
+def test_match_user_realistic_embedding_dimensions():
+    """Lock the np.dot / shape contract at realistic ECAPA dimensionality (192-d):
+    the toy 2-3 element vectors elsewhere would not catch a shape/dtype regression."""
+    rng = np.random.RandomState(0)
+    profile = _norm(rng.rand(192))
+    embeds = {0: _norm(rng.rand(192)), 1: profile}  # speaker 1 == the profile → must win
+    utts = [_utt(0, 0.0, 5.0), _utt(1, 5.0, 9.0)]
+    with patch.object(speaker_id, "_embed_speaker", side_effect=lambda a, s, spk: embeds[spk]):
+        result = speaker_id.match_user("x.wav", utts, profile)
+    assert result["user_speaker"] == 1
+    assert -1.0 <= result["confidence"] <= 1.0
+    assert result["confidence"] == pytest.approx(1.0, abs=1e-5)  # identical unit vectors → cos 1.0
+    assert result["low_confidence"] is False

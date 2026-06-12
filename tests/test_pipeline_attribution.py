@@ -89,3 +89,38 @@ def test_low_confidence_flag_persisted(tmp_path):
     results, _ = _run(tmp_path, profile=np.ones(3), match=low)
     saved = _read_transcript(results)
     assert saved["speaker_attribution"]["low_confidence"] is True
+
+
+def test_pipeline_survives_match_user_raising(tmp_path):
+    """The pipeline's own try/except around match_user must keep the guarantee
+    even if match_user *raises* (not just returns None) — generic analysis still
+    completes. This exercises the defensive catch in run_analysis_pipeline that
+    the service-level None-on-exception test does not reach."""
+    combiner = MagicMock()
+    combiner.combine_features.return_value = {"words_per_minute": 100.0}
+    with (
+        patch("src.pipelines.analysis_pipeline.stt.transcribe", return_value=dict(STT_RESULT)),
+        patch("src.pipelines.analysis_pipeline.initialize_vector_store", return_value=None),
+        patch("src.pipelines.analysis_pipeline.speaker_id.load_profile", return_value=np.ones(3)),
+        patch("src.pipelines.analysis_pipeline.speaker_id.match_user", side_effect=RuntimeError("boom")),
+        patch("src.pipelines.analysis_pipeline.FeatureCombiner", return_value=combiner),
+        patch("src.pipelines.analysis_pipeline.emotion.analyze", return_value=None),
+        patch("src.pipelines.analysis_pipeline.llm.generate_feedback", return_value="fb"),
+    ):
+        results = run_analysis_pipeline("audio.wav", output_dir=str(tmp_path))
+    saved = _read_transcript(results)
+    assert saved["speaker_attribution"] == {"enabled": False, "reason": "match_failed"}
+    assert results["features_path"] is not None  # non-fatal: generic analysis completed
+    kwargs = combiner.combine_features.call_args.kwargs
+    assert kwargs["transcript_text"] == STT_RESULT["text"]  # full transcript (generic)
+    assert kwargs["audio_path"] == "audio.wav"               # full audio (generic)
+
+
+def test_export_called_with_matched_speakers_segments(tmp_path):
+    """The user-only WAV must be exported from the MATCHED speaker's segment
+    times — guards against a speaker-filter regression that the fixed export
+    return value would otherwise hide."""
+    results, mocks = _run(tmp_path, profile=np.ones(3), match=dict(MATCH))
+    # MATCH user_speaker == 1, whose only utterance spans (1.6, 3.9) — NOT speaker 0's (0.0, 1.5)
+    segments_arg = mocks["export"].call_args.args[1]
+    assert segments_arg == [(1.6, 3.9)]
