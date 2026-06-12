@@ -273,6 +273,18 @@ This recording has {len(unique_speakers)} distinct speakers. When giving feedbac
 ```
 """
 
+    # Mode-aware task directive so the scoring instruction itself (not just the
+    # context section) names the wearer — prevents the LLM from drifting into
+    # scoring other speakers in wearer-focused mode.
+    if user_speaker is not None:
+        task_directive = (
+            f"Generate high-value feedback **for Speaker {user_speaker} ONLY** (the enrolled user). "
+            f"Every score and every comment must be about Speaker {user_speaker} alone — do not score, "
+            f"rate, or critique any other speaker. Follow the Markdown structure below precisely."
+        )
+    else:
+        task_directive = "Generate high-value feedback following the Markdown structure below precisely."
+
     return f"""You are an expert communication coach. You have been given the speaker's audio recording to listen to directly, along with computed features and a transcript. Use EVERYTHING — what you hear AND the data — to give highly specific, evidence-based feedback.
 
 **IMPORTANT:** Do not give generic advice. Every point must cite either a direct quote from the transcript, a specific feature value, or something you can hear in the audio.
@@ -288,7 +300,7 @@ This recording has {len(unique_speakers)} distinct speakers. When giving feedbac
 ```
 {emotion_section}{speaker_section}
 **Your Task:**
-Generate high-value feedback following the Markdown structure below precisely.
+{task_directive}
 
 **Output Format:**
 

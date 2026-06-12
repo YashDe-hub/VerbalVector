@@ -409,3 +409,20 @@ def test_build_prompt_without_user_speaker_keeps_generic_behavior():
     ]
     prompt = _build_prompt("A. B.", {"words_per_minute": 120.0}, None, utterances)
     assert "address each speaker by their ID" in prompt
+
+
+def test_build_prompt_wearer_mode_task_directive_names_user_speaker():
+    from src.services.llm import _build_prompt
+    utterances = [
+        {"speaker": 0, "text": "Q?", "start": 0.0, "end": 1.0, "confidence": 0.9},
+        {"speaker": 1, "text": "A.", "start": 1.1, "end": 2.0, "confidence": 0.9},
+    ]
+    prompt = _build_prompt("Q? A.", {"words_per_minute": 130.0}, None, utterances, user_speaker=1)
+    # The task directive itself (not just the context section) must target Speaker 1
+    assert "for Speaker 1 ONLY" in prompt
+
+def test_build_prompt_generic_task_directive_unchanged():
+    from src.services.llm import _build_prompt
+    prompt = _build_prompt("hello world", {"words_per_minute": 130.0}, None, None)
+    assert "Generate high-value feedback following the Markdown structure below precisely." in prompt
+    assert "for Speaker" not in prompt
