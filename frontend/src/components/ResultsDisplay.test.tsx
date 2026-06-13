@@ -154,3 +154,71 @@ describe('ResultsDisplay transcript rendering', () => {
     expect(screen.getByText(/untagged\./)).toBeInTheDocument();
   });
 });
+
+describe('ResultsDisplay speaker attribution', () => {
+  const utterances = [
+    { speaker: 0, text: 'How was the demo?', start: 0.0, end: 1.5, confidence: 0.98 },
+    { speaker: 1, text: 'It went well.', start: 1.6, end: 3.0, confidence: 0.97 },
+  ];
+
+  const withAttribution = (attribution: object) => ({
+    message: 'ok',
+    transcript: {
+      text: 'How was the demo? It went well.',
+      utterances,
+      speakers: [0, 1],
+      speaker_attribution: attribution,
+    },
+    features: baseFeatures,
+    feedback: 'fb',
+  });
+
+  it('labels the matched speaker "You" and others "Speaker N"', () => {
+    render(
+      <ResultsDisplay
+        analysisResult={withAttribution({ enabled: true, user_speaker: 1, confidence: 0.81, low_confidence: false })}
+        onAnalyzeAnother={() => {}}
+        onNavigate={() => {}}
+      />,
+    );
+    expect(screen.getByText(/You:/)).toBeInTheDocument();
+    expect(screen.getByText(/Speaker 0:/)).toBeInTheDocument();
+    expect(screen.queryByText(/Speaker 1:/)).not.toBeInTheDocument();
+    expect(screen.getByText(/about you/i)).toBeInTheDocument();
+  });
+
+  it('shows a low-confidence warning banner', () => {
+    render(
+      <ResultsDisplay
+        analysisResult={withAttribution({ enabled: true, user_speaker: 0, confidence: 0.21, low_confidence: true })}
+        onAnalyzeAnother={() => {}}
+        onNavigate={() => {}}
+      />,
+    );
+    expect(screen.getByText(/weren't sure which speaker was you/i)).toBeInTheDocument();
+  });
+
+  it('shows a fallback note when attribution failed', () => {
+    render(
+      <ResultsDisplay
+        analysisResult={withAttribution({ enabled: false, reason: 'match_failed' })}
+        onAnalyzeAnother={() => {}}
+        onNavigate={() => {}}
+      />,
+    );
+    expect(screen.getByText(/couldn't identify you/i)).toBeInTheDocument();
+  });
+
+  it('renders nothing attribution-related when no_profile', () => {
+    render(
+      <ResultsDisplay
+        analysisResult={withAttribution({ enabled: false, reason: 'no_profile' })}
+        onAnalyzeAnother={() => {}}
+        onNavigate={() => {}}
+      />,
+    );
+    expect(screen.queryByText(/about you/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/couldn't identify you/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/You:/)).not.toBeInTheDocument();
+  });
+});

@@ -375,3 +375,54 @@ def test_generate_feedback_accepts_none_utterances(fake_audio, features):
         result = generate_feedback(fake_audio, "Hello.", features)
 
     assert result is not None
+
+
+def test_build_prompt_wearer_mode_coaches_only_user_speaker():
+    from src.services.llm import _build_prompt
+    utterances = [
+        {"speaker": 0, "text": "How was the demo?", "start": 0.0, "end": 1.5, "confidence": 0.9},
+        {"speaker": 1, "text": "It went well, we shipped it.", "start": 1.6, "end": 3.9, "confidence": 0.9},
+    ]
+    prompt = _build_prompt(
+        transcript="How was the demo? It went well, we shipped it.",
+        features={"words_per_minute": 140.0},
+        emotion_scores=None,
+        utterances=utterances,
+        user_speaker=1,
+    )
+    # Coach-only instruction present and targeted
+    assert "Speaker 1" in prompt
+    assert "ONLY Speaker 1" in prompt or "only Speaker 1" in prompt
+    # Full conversation kept as context (other speaker's words included)
+    assert "How was the demo?" in prompt
+    # Features clarified as user-only
+    assert "only from Speaker 1" in prompt
+    # Generic multi-speaker coaching instruction must NOT appear in wearer mode
+    assert "address each speaker by their ID" not in prompt
+
+
+def test_build_prompt_without_user_speaker_keeps_generic_behavior():
+    from src.services.llm import _build_prompt
+    utterances = [
+        {"speaker": 0, "text": "A.", "start": 0.0, "end": 1.0, "confidence": 0.9},
+        {"speaker": 1, "text": "B.", "start": 1.1, "end": 2.0, "confidence": 0.9},
+    ]
+    prompt = _build_prompt("A. B.", {"words_per_minute": 120.0}, None, utterances)
+    assert "address each speaker by their ID" in prompt
+
+
+def test_build_prompt_wearer_mode_task_directive_names_user_speaker():
+    from src.services.llm import _build_prompt
+    utterances = [
+        {"speaker": 0, "text": "Q?", "start": 0.0, "end": 1.0, "confidence": 0.9},
+        {"speaker": 1, "text": "A.", "start": 1.1, "end": 2.0, "confidence": 0.9},
+    ]
+    prompt = _build_prompt("Q? A.", {"words_per_minute": 130.0}, None, utterances, user_speaker=1)
+    # The task directive itself (not just the context section) must target Speaker 1
+    assert "for Speaker 1 ONLY" in prompt
+
+def test_build_prompt_generic_task_directive_unchanged():
+    from src.services.llm import _build_prompt
+    prompt = _build_prompt("hello world", {"words_per_minute": 130.0}, None, None)
+    assert "Generate high-value feedback following the Markdown structure below precisely." in prompt
+    assert "for Speaker" not in prompt

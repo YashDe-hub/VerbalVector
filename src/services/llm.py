@@ -34,6 +34,7 @@ def generate_feedback(
     features: Dict[str, Any],
     emotion_scores: Optional[Dict[str, float]] = None,
     utterances: Optional[list[dict]] = None,
+    user_speaker: Optional[int] = None,
 ) -> Optional[str]:
     """
     Generate markdown feedback using Gemini 2.5 Flash with native audio.
@@ -46,6 +47,9 @@ def generate_feedback(
         utterances:     Per-utterance diarization list from STT (optional).
                         When present and contains multiple distinct speakers,
                         a per-speaker breakdown is added to the Gemini prompt.
+        user_speaker:   Speaker ID (int) of the enrolled wearer (optional).
+                        When set, the prompt coaches only that speaker and
+                        treats all other speakers as context only.
 
     Returns:
         Markdown-formatted feedback string, or None on error.
@@ -103,7 +107,7 @@ def generate_feedback(
                 )
                 return None
 
-            prompt = _build_prompt(transcript, features, emotion_scores, utterances)
+            prompt = _build_prompt(transcript, features, emotion_scores, utterances, user_speaker=user_speaker)
 
             response = client.models.generate_content(
                 model=GEMINI_LLM_MODEL,
@@ -195,6 +199,7 @@ def _build_prompt(
     features: Dict[str, Any],
     emotion_scores: Optional[Dict[str, float]],
     utterances: Optional[list[dict]] = None,
+    user_speaker: Optional[int] = None,
 ) -> str:
     """Build the Gemini prompt from transcript, extracted features, and optional Hume emotion scores."""
 
@@ -231,17 +236,33 @@ def _build_prompt(
 Use these scores to add qualitative nuance to your assessment of how the speaker sounds emotionally.
 """
 
-    # Build multi-speaker section when there are 2+ distinct speakers
+    # Build multi-speaker / wearer-focused section
     speaker_section = ""
     if utterances:
         unique_speakers = sorted({u["speaker"] for u in utterances if u.get("speaker") is not None})
-        if len(unique_speakers) > 1:
-            speaker_lines = []
-            for u in utterances:
-                spk = u.get("speaker")
-                spk_label = f"Speaker {spk}" if spk is not None else "Unknown"
-                speaker_lines.append(f"- {spk_label}: {u['text']}")
-            speaker_block = "\n".join(speaker_lines)
+        speaker_lines = []
+        for u in utterances:
+            spk = u.get("speaker")
+            spk_label = f"Speaker {spk}" if spk is not None else "Unknown"
+            speaker_lines.append(f"- {spk_label}: {u['text']}")
+        speaker_block = "\n".join(speaker_lines)
+
+        if user_speaker is not None:
+            speaker_section = f"""
+**Wearer-Focused Mode — coach ONLY Speaker {user_speaker}:**
+
+The person you are coaching is Speaker {user_speaker} (identified by voice enrollment).
+All other speakers are CONTEXT ONLY — use their words to understand what Speaker {user_speaker}
+was responding to, but do NOT evaluate, score, or give feedback to them.
+The computed features above were calculated only from Speaker {user_speaker}'s speech.
+Every score and every piece of feedback must be about Speaker {user_speaker} alone.
+
+Full conversation (for context):
+```
+{speaker_block}
+```
+"""
+        elif len(unique_speakers) > 1:
             speaker_section = f"""
 **Conversation Mode — Multi-Speaker Transcript:**
 
@@ -251,6 +272,18 @@ This recording has {len(unique_speakers)} distinct speakers. When giving feedbac
 {speaker_block}
 ```
 """
+
+    # Mode-aware task directive so the scoring instruction itself (not just the
+    # context section) names the wearer — prevents the LLM from drifting into
+    # scoring other speakers in wearer-focused mode.
+    if user_speaker is not None:
+        task_directive = (
+            f"Generate high-value feedback **for Speaker {user_speaker} ONLY** (the enrolled user). "
+            f"Every score and every comment must be about Speaker {user_speaker} alone — do not score, "
+            f"rate, or critique any other speaker. Follow the Markdown structure below precisely."
+        )
+    else:
+        task_directive = "Generate high-value feedback following the Markdown structure below precisely."
 
     return f"""You are an expert communication coach. You have been given the speaker's audio recording to listen to directly, along with computed features and a transcript. Use EVERYTHING — what you hear AND the data — to give highly specific, evidence-based feedback.
 
@@ -267,7 +300,7 @@ This recording has {len(unique_speakers)} distinct speakers. When giving feedbac
 ```
 {emotion_section}{speaker_section}
 **Your Task:**
-Generate high-value feedback following the Markdown structure below precisely.
+{task_directive}
 
 **Output Format:**
 

@@ -34,13 +34,19 @@ pytest>=7.0.0
 httpx>=0.27.0
 pytest-asyncio>=0.23.0
 
+speechbrain>=1.0.0
+# torch & torchaudio MUST share the exact same version — torchaudio's C extension
+# links torch's ABI. An unpinned torchaudio resolves to the latest and breaks against
+# an older torch (dlopen "Symbol not found: _aoti_torch_abi_version"). Pin the pair.
+torch==2.6.0                 # speaker_id.compute_embedding (also a speechbrain dep)
+torchaudio==2.6.0            # speechbrain dep; must match torch exactly
+soundfile>=0.12.0            # used by speaker_id.export_segments_wav (also a librosa dep)
+
 # ── Removed ───────────────────────────────────────────────────────────────────
 # ollama          — replaced by Gemini via google-generativeai
 # openai-whisper  — replaced by Deepgram via deepgram-sdk
 # bitsandbytes    — quantization only needed for local model training
 # sounddevice     — only used by main.py live-recording (deleted)
-# soundfile       — only used by main.py live-recording (deleted)
-# torch           — only used by create_finetune_data.py (deleted)
 # transformers    — only used by create_finetune_data.py (deleted)
 # datasets        — only used by create_finetune_data.py (deleted)
 # peft            — only used by create_finetune_data.py (deleted)

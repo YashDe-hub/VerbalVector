@@ -18,6 +18,8 @@ from src.vector_store.manager import initialize_vector_store, search_transcripts
 from src.services.llm import generate_rag_answer, NO_RELEVANT_CONTENT
 from src.services.streaming_stt import StreamingTranscriber, StreamingSttError
 from src.services.audio_assembler import AudioAssembler
+from src.services import speaker_id
+import librosa
 
 config.validate()
 
@@ -27,7 +29,7 @@ ALLOWED_ORIGINS = config.CORS_ALLOWED_ORIGINS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -229,6 +231,67 @@ async def get_session_result(session_id: str):
     if results is None:
         raise HTTPException(status_code=500, detail="Result files present but unreadable.")
     return results
+
+
+@app.post("/api/enroll")
+async def enroll_voice(file: UploadFile = File(...)):
+    """One-time voice enrollment: store the user's voiceprint (single profile)."""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file selected")
+    ext = os.path.splitext(file.filename)[-1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type '{ext}'.")
+
+    safe_name = f"enroll_{uuid.uuid4().hex}{ext}"
+    filepath = os.path.join(UPLOAD_FOLDER, safe_name)
+    total_bytes = 0
+    try:
+        with open(filepath, "wb") as f:
+            while chunk := await file.read(8192):
+                total_bytes += len(chunk)
+                if total_bytes > MAX_FILE_SIZE_BYTES:
+                    raise HTTPException(status_code=413, detail="File too large.")
+                f.write(chunk)
+
+        duration = await asyncio.to_thread(librosa.get_duration, path=filepath)
+        if duration < config.ENROLL_MIN_SECONDS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Enrollment audio must be at least {config.ENROLL_MIN_SECONDS:.0f} seconds "
+                       f"(got {duration:.1f}s). Record ~30 seconds of normal speech.",
+            )
+
+        embedding = await asyncio.to_thread(speaker_id.compute_embedding, filepath)
+        if embedding is None:
+            raise HTTPException(status_code=500, detail="Could not process enrollment audio.")
+
+        meta = speaker_id.save_profile(embedding, duration_seconds=round(duration, 1))
+        return meta
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Enrollment failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Enrollment failed.")
+    finally:
+        try:
+            os.remove(filepath)  # enrollment audio is transient — only the embedding persists
+        except OSError:
+            pass
+
+
+@app.get("/api/enroll")
+async def get_enrollment():
+    meta = speaker_id.get_profile_meta()
+    if meta is None:
+        raise HTTPException(status_code=404, detail="No voice profile enrolled.")
+    return meta
+
+
+@app.delete("/api/enroll", status_code=204)
+async def delete_enrollment():
+    if not speaker_id.delete_profile():
+        raise HTTPException(status_code=404, detail="No voice profile enrolled.")
+    return None
 
 
 @app.websocket("/api/stream")
